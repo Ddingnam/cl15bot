@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: cl15bot
+
+server:
+  address: 0.0.0.0
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+bot:
+  mattermost-token: ${MATTERMOST_SLASH_TOKEN:}
+  notion-token: ${NOTION_TOKEN:}
+  notion-data-source-id: ${NOTION_DATA_SOURCE_ID:}
+  notion-title-property: ${NOTION_TITLE_PROPERTY:스터디}
+  notion-member-mappings: ${NOTION_MEMBER_MAPPINGS:}
