@@ -46,7 +46,7 @@ class StudyAsyncResponseTests {
     @Test
     void acknowledgesBeforeNotionWorkAndSendsLinkedSuccessOnce() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
-        when(notion.save(any(), eq("member-id"))).thenReturn(LINK);
+        when(notion.saveToStudyLog(any(), eq("member-id"))).thenReturn(LINK);
         mvc(queue::add).perform(request("1012 1900 2030 Java 복습", CALLBACK))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.response_type").value("ephemeral"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⏳")));
@@ -56,14 +56,14 @@ class StudyAsyncResponseTests {
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(eq(URI.create(CALLBACK)), result.capture());
         assertEquals("ephemeral", result.getValue().response_type());
-        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📚 공부 내용 : Java 복습\n🔗 [Notion 기록 확인](<" + LINK + ">)", result.getValue().text());
-        verify(notion, times(1)).save(any(), eq("member-id"));
+        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📚 공부 내용 : Java 복습\n🔗 [Study Log 전체 기록 확인](<" + LINK + ">)", result.getValue().text());
+        verify(notion, times(1)).saveToStudyLog(any(), eq("member-id"));
     }
 
     @Test
     void sendsOverlapRangeAsFinalFailure() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
-        when(notion.save(any(), any())).thenThrow(new NotionStudyClient.OverlappingStudyException(
+        when(notion.saveToStudyLog(any(), any())).thenThrow(new NotionStudyClient.OverlappingStudyException(
                 "🕒 기존 기록 : 2026-10-12 19:00 ~ 20:30\n"));
         mvc(queue::add).perform(request("1012 2000 2100 Java", CALLBACK))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⏳")));
@@ -78,14 +78,14 @@ class StudyAsyncResponseTests {
     @Test
     void uncertainSaveIsDeliveredWithoutRecreatingPage() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
-        when(notion.save(any(), any())).thenThrow(new ResourceAccessException("secret-details"));
+        when(notion.saveToStudyLog(any(), any())).thenThrow(new ResourceAccessException("secret-details"));
         mvc(queue::add).perform(request("1012 1900 2030 Java", CALLBACK));
         queue.getFirst().run();
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(any(), result.capture());
         assertTrue(result.getValue().text().contains("재입력 전에 Notion"));
         assertFalse(result.getValue().text().contains("secret-details"));
-        verify(notion, times(1)).save(any(), any());
+        verify(notion, times(1)).saveToStudyLog(any(), any());
     }
 
     @Test

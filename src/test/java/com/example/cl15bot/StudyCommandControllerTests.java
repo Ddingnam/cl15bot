@@ -60,7 +60,7 @@ class StudyCommandControllerTests {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.response_type").value("ephemeral"))
                 .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java 스트림 복습", saved.getValue().subject());
         assertEquals("홍길동", saved.getValue().memberName());
         verify(members).pageIdFor("홍길동");
@@ -83,7 +83,7 @@ class StudyCommandControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장했습니다")));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals(channel, saved.getValue().channelId());
     }
 
@@ -99,7 +99,7 @@ class StudyCommandControllerTests {
         mvc.perform(command("1011 2330 1012 0030 Java"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("2026-10-11 23:30 ~ 2026-10-12 00:30")));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals(60, saved.getValue().minutes());
         assertEquals("2026-10-11", saved.getValue().date().toString());
     }
@@ -120,16 +120,16 @@ class StudyCommandControllerTests {
 
     @Test
     void reportsDuplicateWithoutSuccessReply() throws Exception {
-        doThrow(new NotionStudyClient.OverlappingStudyException()).when(notion).save(any(), any());
+        doThrow(new NotionStudyClient.OverlappingStudyException()).when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java"))
                 .andExpect(jsonPath("$.text").value("⚠️ 같은 멤버의 기존 기록과 공부 시간이 겹칩니다. 저장하지 않았습니다. Notion에서 기존 기록을 확인하고 겹치지 않는 시간으로 수정해주세요."));
-        verify(notion, times(1)).save(any(), eq(MEMBER_PAGE));
+        verify(notion, times(1)).saveToStudyLog(any(), eq(MEMBER_PAGE));
     }
 
     @Test
     void reportsPreflightFailureAsNoWriteWithoutLeakingDetails() throws Exception {
         doThrow(new NotionStudyClient.StudyPreflightException("overlap-query", new ResourceAccessException("secret-detail")))
-                .when(notion).save(any(), any());
+                .when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장 요청을 보내지 않았습니다")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("secret-detail"))));
@@ -161,17 +161,17 @@ class StudyCommandControllerTests {
     @Test
     void mapsNotionSchemaErrorsWithoutLeakingResponseBody() throws Exception {
         doThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST, "sensitive-detail"))
-                .when(notion).save(any(), any());
+                .when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value("⚠️ Notion 기록 항목 설정이 맞지 않아 저장하지 못했습니다. 관리자에게 Study Log 설정 확인을 요청해주세요."));
     }
 
     @Test
     void warnsAboutAmbiguousTimeoutWithoutRetrying() throws Exception {
-        doThrow(new ResourceAccessException("timeout")).when(notion).save(any(), any());
+        doThrow(new ResourceAccessException("timeout")).when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value("⚠️ 저장 완료 여부를 확인하지 못했습니다. 재입력 전에 Notion에서 해당 멤버·시간의 기록을 확인해주세요. 기록이 없으면 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요."));
-        verify(notion, times(1)).save(any(), eq(MEMBER_PAGE));
+        verify(notion, times(1)).saveToStudyLog(any(), eq(MEMBER_PAGE));
     }
 
     @Test
@@ -244,7 +244,7 @@ class StudyCommandControllerTests {
         mvc.perform(command("1011 2300 1012 0100 Java")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-11 23:00 ~ 2026-10-12 01:00 · 120분\n📚 공부 내용 : Java"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("2026-10-11", saved.getValue().date().toString());
         assertEquals(120, java.time.Duration.between(saved.getValue().startTime(), saved.getValue().endTime()).toMinutes());
     }
@@ -261,7 +261,7 @@ class StudyCommandControllerTests {
         mvc.perform(command("1012 0000 0100 Java\n스트림 복습"))
                 .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java\n스트림 복습", saved.getValue().subject());
     }
 
@@ -269,23 +269,23 @@ class StudyCommandControllerTests {
     @ValueSource(ints = {400, 401, 403, 404, 429, 500})
     void preflightHttpFailureGivesActionWithoutAmbiguousSaveWarning(int code) throws Exception {
         doThrow(new NotionStudyClient.StudyPreflightException("overlap-query",
-                new HttpClientErrorException(HttpStatus.valueOf(code)))).when(notion).save(any(), any());
+                new HttpClientErrorException(HttpStatus.valueOf(code)))).when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⚠️ ")))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("해주세요")))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("재입력 전에"))))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("예:"))));
-        verify(notion, times(1)).save(any(), eq(MEMBER_PAGE));
+        verify(notion, times(1)).saveToStudyLog(any(), eq(MEMBER_PAGE));
     }
 
     @Test
     void createServerErrorRequiresCheckingNotionBeforeRetry() throws Exception {
         doThrow(new org.springframework.web.client.HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
-                .when(notion).save(any(), any());
+                .when(notion).saveToStudyLog(any(), any());
         mvc.perform(command("1012 0000 0100 Java"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("재입력 전에 Notion")))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("기록이 없으면 같은 명령어로 다시 시도")));
-        verify(notion, times(1)).save(any(), eq(MEMBER_PAGE));
+        verify(notion, times(1)).saveToStudyLog(any(), eq(MEMBER_PAGE));
     }
 
     @ParameterizedTest
@@ -294,19 +294,19 @@ class StudyCommandControllerTests {
     void operationalErrorsAlwaysWarnWithoutExamples(String scenario) throws Exception {
         switch (scenario) {
             case "schema" -> doThrow(new NotionStudyClient.StudySchemaException("속성 오류"))
-                    .when(notion).save(any(), any());
+                    .when(notion).saveToStudyLog(any(), any());
             case "preflight" -> doThrow(new NotionStudyClient.StudyPreflightException("overlap-query", new ResourceAccessException("timeout")))
-                    .when(notion).save(any(), any());
+                    .when(notion).saveToStudyLog(any(), any());
             case "member-response" -> when(members.pageIdFor("홍길동"))
                     .thenThrow(new org.springframework.web.client.RestClientException("invalid"));
             case "member-network" -> when(members.pageIdFor("홍길동"))
                     .thenThrow(new ResourceAccessException("timeout"));
             case "save-response" -> doThrow(new org.springframework.web.client.RestClientException("invalid"))
-                    .when(notion).save(any(), any());
-            case "save-network" -> doThrow(new ResourceAccessException("timeout")).when(notion).save(any(), any());
-            case "http" -> doThrow(new HttpClientErrorException(HttpStatus.FORBIDDEN)).when(notion).save(any(), any());
+                    .when(notion).saveToStudyLog(any(), any());
+            case "save-network" -> doThrow(new ResourceAccessException("timeout")).when(notion).saveToStudyLog(any(), any());
+            case "http" -> doThrow(new HttpClientErrorException(HttpStatus.FORBIDDEN)).when(notion).saveToStudyLog(any(), any());
             case "duplicate-member" -> when(members.pageIdFor("홍길동")).thenThrow(new MemberRegistry.DuplicateMemberException());
-            default -> doThrow(new NotionStudyClient.OverlappingStudyException()).when(notion).save(any(), any());
+            default -> doThrow(new NotionStudyClient.OverlappingStudyException()).when(notion).saveToStudyLog(any(), any());
         }
         mvc.perform(command("1012 0000 0100 Java"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⚠️ ")))

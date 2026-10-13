@@ -28,22 +28,26 @@ class StudyRecordingConcurrencyTests {
         var started = new CountDownLatch(12);
         var saveEntered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        when(notion.save(any(), eq("page"))).thenAnswer(invocation -> {
+        org.mockito.stubbing.Answer<String> save = invocation -> {
             peak.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
             saveEntered.countDown();
             try {
                 if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("save timed out");
                 return "https://notion.so/page";
             } finally { inFlight.decrementAndGet(); }
-        });
+        };
+        when(notion.save(any(), eq("page"))).thenAnswer(save);
+        when(notion.saveToStudyLog(any(), eq("page"))).thenAnswer(save);
         var recording = new StudyRecordingService(properties, notion, members);
         try (var pool = Executors.newFixedThreadPool(12)) {
             var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
             for (int index = 0; index < 12; index++) {
                 String platformId = "platform-" + index;
+                boolean mattermost = index % 2 == 0;
                 futures.add(pool.submit(() -> {
                     started.countDown();
-                    recording.process(entry(platformId));
+                    if (mattermost) recording.processMattermost(entry(platformId));
+                    else recording.process(entry(platformId));
                 }));
             }
             try {
@@ -53,7 +57,8 @@ class StudyRecordingConcurrencyTests {
             for (var future : futures) future.get(5, TimeUnit.SECONDS);
         }
         assertEquals(1, peak.get());
-        verify(notion, times(12)).save(any(), eq("page"));
+        verify(notion, times(6)).save(any(), eq("page"));
+        verify(notion, times(6)).saveToStudyLog(any(), eq("page"));
     }
 
     @Test void uncertainCreationIsNotRetried() {

@@ -1,6 +1,6 @@
 package com.example.cl15bot;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
@@ -28,6 +28,46 @@ class NotionStudyClientTests {
     private StudyEntry entry() {
         return new StudyEntry(60, "Java 복습", "홍길동", "u1", "홍길동", "c1",
                 ZonedDateTime.parse("2026-10-12T18:30:00+09:00[Asia/Seoul]"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void successLinksToParentDatabaseForMattermostAndCreatedPageForDiscord(boolean mattermost) {
+        String databaseId = "00000000-0000-0000-0000-000000000002";
+        String pageUrl = "https://www.notion.so/00000000000000000000000000000003";
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        NotionStudyClient client = new NotionStudyClient(
+                new BotProperties("slash", "notion", "source-id", "스터디", "members"), builder.build());
+        String schema = SCHEMA.formatted("", "").strip();
+        schema = schema.substring(0, schema.length() - 1)
+                + ",\"parent\":{\"type\":\"database_id\",\"database_id\":\"" + databaseId + "\"}}";
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id"))
+                .andRespond(withSuccess(schema, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id/query"))
+                .andRespond(withSuccess("{\"results\":[],\"has_more\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.notion.com/v1/pages"))
+                .andExpect(jsonPath("$.parent.data_source_id").value("source-id"))
+                .andRespond(withSuccess("{\"url\":\"" + pageUrl + "\"}", MediaType.APPLICATION_JSON));
+        String link = mattermost ? client.saveToStudyLog(entry(), "member-id") : client.save(entry(), "member-id");
+        assertEquals(mattermost ? "https://www.notion.so/00000000000000000000000000000002" : pageUrl, link);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"type\":\"page_id\",\"database_id\":\"00000000000000000000000000000002\"}",
+            "{\"type\":\"database_id\",\"database_id\":\"invalid\"}"})
+    void missingOrInvalidStudyLogParentRejectsMattermostBeforeCreation(String parent) {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        NotionStudyClient client = new NotionStudyClient(
+                new BotProperties("slash", "notion", "source-id", "스터디", "members"), builder.build());
+        String schema = SCHEMA.formatted("", "").strip();
+        schema = schema.substring(0, schema.length() - 1) + ",\"parent\":" + parent + "}";
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id"))
+                .andRespond(withSuccess(schema, MediaType.APPLICATION_JSON));
+        assertThrows(NotionStudyClient.StudySchemaException.class, () -> client.saveToStudyLog(entry(), "member-id"));
+        server.verify();
     }
 
     @ParameterizedTest

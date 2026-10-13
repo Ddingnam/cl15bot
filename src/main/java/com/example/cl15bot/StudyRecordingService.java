@@ -25,16 +25,24 @@ public class StudyRecordingService {
     }
 
     public ResponseEntity<CommandResponse> process(StudyEntry entry) {
+        return process(entry, false);
+    }
+
+    public ResponseEntity<CommandResponse> processMattermost(StudyEntry entry) {
+        return process(entry, true);
+    }
+
+    private ResponseEntity<CommandResponse> process(StudyEntry entry, boolean linkToStudyLog) {
         if (!properties.hasNotionConfiguration()) {
             return ResponseEntity.ok(failureReply("Notion 연결 설정이 완료되지 않아 저장할 수 없습니다. 관리자에게 설정 확인을 요청해주세요."));
         }
         // Fixed stripes bound memory and serialize preflight + creation across both platforms.
         synchronized (memberLocks[Math.floorMod(entry.memberName().hashCode(), memberLocks.length)]) {
-            return processLocked(entry);
+            return processLocked(entry, linkToStudyLog);
         }
     }
 
-    private ResponseEntity<CommandResponse> processLocked(StudyEntry entry) {
+    private ResponseEntity<CommandResponse> processLocked(StudyEntry entry, boolean linkToStudyLog) {
         boolean saveStarted = false;
         try {
             String memberPageId = members.pageIdFor(entry.memberName()).orElse(null);
@@ -42,11 +50,13 @@ public class StudyRecordingService {
                 return ResponseEntity.ok(failureReply("연결된 이름을 Members에서 찾지 못했습니다. 관리자에게 계정 연결 이름과 Notion Members 이름의 일치 여부를 확인해달라고 요청해주세요."));
             }
             saveStarted = true;
-            String pageUrl = notion.save(entry, memberPageId);
+            String pageUrl = linkToStudyLog ? notion.saveToStudyLog(entry, memberPageId)
+                    : notion.save(entry, memberPageId);
             return ResponseEntity.ok(reply("✅ " + display(entry.memberName()) + "님의 공부 기록을 저장했습니다.\n"
                     + "🕒 " + NotionStudyClient.period(entry.startTime(), entry.endTime()) + " · " + entry.minutes() + "분\n"
                     + "📚 공부 내용 : " + display(entry.subject())
-                    + (pageUrl == null || pageUrl.isEmpty() ? "" : "\n🔗 [Notion 기록 확인](<" + pageUrl + ">)")));
+                    + (pageUrl == null || pageUrl.isEmpty() ? "" : "\n🔗 ["
+                            + (linkToStudyLog ? "Study Log 전체 기록 확인" : "Notion 기록 확인") + "](<" + pageUrl + ">)")));
         } catch (NotionStudyClient.OverlappingStudyException ex) {
             return ResponseEntity.ok(failureReply(ex.getMessage()));
         } catch (NotionStudyClient.StudyPreflightException ex) {

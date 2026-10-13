@@ -27,11 +27,24 @@ public class NotionStudyClient {
     }
 
     public String save(StudyEntry entry, String memberPageId) {
+        return save(entry, memberPageId, false);
+    }
+
+    public String saveToStudyLog(StudyEntry entry, String memberPageId) {
+        return save(entry, memberPageId, true);
+    }
+
+    private String save(StudyEntry entry, String memberPageId, boolean linkToStudyLog) {
         Map<String, String> columns;
+        ResolvedStudySchema schema;
         try {
-            columns = studyColumns();
+            schema = studyColumns();
+            columns = schema.columns();
         } catch (RestClientException ex) {
             throw new StudyPreflightException("study-schema", ex);
+        }
+        if (linkToStudyLog && schema.studyLogUrl().isEmpty()) {
+            throw new StudySchemaException("Study Log 전체 로그 주소를 확인하지 못해 저장 요청을 보내지 않았습니다. 관리자에게 데이터베이스 연결 확인을 요청해주세요.");
         }
         rejectOverlap(entry, memberPageId, columns);
         Map<String, Object> fields = Map.of(
@@ -47,7 +60,7 @@ public class NotionStudyClient {
         if (saved == null) throw new RestClientException("Missing created Study Log page response");
         String url = pageLink(saved.id(), saved.url());
         if (url.isEmpty()) throw new RestClientException("Missing created Study Log page identity");
-        return url;
+        return linkToStudyLog ? schema.studyLogUrl() : url;
     }
 
     private void rejectOverlap(StudyEntry entry, String memberPageId, Map<String, String> columns) {
@@ -147,7 +160,7 @@ public class NotionStudyClient {
         public String stage() { return stage; }
     }
 
-    private Map<String, String> studyColumns() {
+    private ResolvedStudySchema studyColumns() {
         StudySchema schema = client.get().uri("/data_sources/{id}", properties.notionDataSourceId())
                 .retrieve().body(StudySchema.class);
         if (schema == null || schema.properties() == null) {
@@ -166,10 +179,14 @@ public class NotionStudyClient {
             }
             resolved.put(column.getKey(), candidates.getFirst().getKey());
         }
-        return resolved;
+        String studyLogUrl = schema.parent() != null && "database_id".equals(schema.parent().type())
+                ? pageLink(schema.parent().database_id(), null) : "";
+        return new ResolvedStudySchema(resolved, studyLogUrl);
     }
 
-    public record StudySchema(Map<String, ColumnSchema> properties) { }
+    private record ResolvedStudySchema(Map<String, String> columns, String studyLogUrl) { }
+    public record StudySchema(Map<String, ColumnSchema> properties, DatabaseParent parent) { }
+    public record DatabaseParent(String type, String database_id) { }
     public record ColumnSchema(String type) { }
     public static class StudySchemaException extends RuntimeException {
         public StudySchemaException(String message) {

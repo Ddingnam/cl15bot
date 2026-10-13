@@ -40,7 +40,7 @@ class LocalTestIntegrationTests {
     void registerMember() {
         when(notion.findMemberPageId("홍길동"))
                 .thenReturn(java.util.Optional.of("00000000-0000-0000-0000-000000000001"));
-        when(notion.save(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+        when(notion.saveToStudyLog(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn("https://www.notion.so/00000000000000000000000000000002");
     }
 
@@ -64,9 +64,9 @@ class LocalTestIntegrationTests {
                 .param("token", "local-test-token").param("text", "1012 1900 1901 한글 로컬 테스트")
                 .param("user_id", "local-test").param("user_name", "테스트").param("channel_id", "test-study-channel"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장했습니다")))
-                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("[Notion 기록 확인]")));
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("[Study Log 전체 기록 확인]")));
         ArgumentCaptor<StudyEntry> entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(notion).save(entry.capture(), eq("00000000-0000-0000-0000-000000000001"));
+        verify(notion).saveToStudyLog(entry.capture(), eq("00000000-0000-0000-0000-000000000001"));
         assertEquals("한글 로컬 테스트", entry.getValue().subject());
     }
 }

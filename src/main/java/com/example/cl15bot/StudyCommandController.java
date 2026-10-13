@@ -102,7 +102,7 @@ public class StudyCommandController {
     }
 
     private ResponseEntity<CommandResponse> process(StudyEntry entry) {
-        return recording.process(entry);
+        return recording.processMattermost(entry);
     }
 
     private static CommandResponse failureReply(String text) { return reply(StudyEntry.inputError(text)); }
