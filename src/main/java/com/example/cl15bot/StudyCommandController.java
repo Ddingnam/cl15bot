@@ -80,6 +80,8 @@ public class StudyCommandController {
             DateTimeFormatter format = DateTimeFormatter.ofPattern("MM-dd HH:mm");
             return ResponseEntity.ok(reply("✅ 공부 " + entry.minutes() + "분을 Notion에 저장했습니다.\n"
                     + entry.startTime().format(format) + " ~ " + entry.endTime().format(format) + " (한국 시간)"));
+        } catch (NotionStudyClient.StudySchemaException ex) {
+            return ResponseEntity.ok(reply(ex.getMessage()));
         } catch (MemberRegistry.DuplicateMemberException ex) {
             return ResponseEntity.ok(reply(ex.getMessage()));
         } catch (RestClientResponseException ex) {
