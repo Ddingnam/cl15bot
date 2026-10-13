@@ -34,7 +34,7 @@ class StudyAsyncResponseTests {
     private MockMvc mvc(Executor executor) {
         return MockMvcBuilders.standaloneSetup(new StudyCommandController(
                 new BotProperties("slash", "notion", "source", "스터디", "members"), notion, clock,
-                members, sender, executor)).build();
+                members, sender, executor, new MattermostMemberMapping("{\"u1\":\"정명남\"}"))).build();
     }
 
     private MockHttpServletRequestBuilder request(String text, String callback) {
@@ -47,7 +47,7 @@ class StudyAsyncResponseTests {
     void acknowledgesBeforeNotionWorkAndSendsLinkedSuccessOnce() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
         when(notion.save(any(), eq("member-id"))).thenReturn(LINK);
-        mvc(queue::add).perform(request("2026-10-12 19:00 20:30 정명남 | Java 복습", CALLBACK))
+        mvc(queue::add).perform(request("1012 1900 2030 Java 복습", CALLBACK))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.response_type").value("ephemeral"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⏳")));
         verifyNoInteractions(notion, members, sender);
@@ -65,7 +65,7 @@ class StudyAsyncResponseTests {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
         when(notion.save(any(), any())).thenThrow(new NotionStudyClient.OverlappingStudyException(
                 "🕒 기존 기록 : 2026-10-12 19:00 ~ 20:30\n"));
-        mvc(queue::add).perform(request("2026-10-12 20:00 21:00 정명남 | Java", CALLBACK))
+        mvc(queue::add).perform(request("1012 2000 2100 Java", CALLBACK))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⏳")));
         queue.getFirst().run();
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
@@ -79,7 +79,7 @@ class StudyAsyncResponseTests {
     void uncertainSaveIsDeliveredWithoutRecreatingPage() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
         when(notion.save(any(), any())).thenThrow(new ResourceAccessException("secret-details"));
-        mvc(queue::add).perform(request("2026-10-12 19:00 20:30 정명남 | Java", CALLBACK));
+        mvc(queue::add).perform(request("1012 1900 2030 Java", CALLBACK));
         queue.getFirst().run();
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(any(), result.capture());
@@ -91,7 +91,7 @@ class StudyAsyncResponseTests {
     @Test
     void invalidInputAndHelpRespondImmediatelyWithoutQueueing() throws Exception {
         var mvc = mvc(queue::add);
-        mvc.perform(request("2026-10-12 19:00 18:00 정명남 | Java", CALLBACK))
+        mvc.perform(request("1012 1900 1800 Java", CALLBACK))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⚠️")));
         mvc.perform(request("help", CALLBACK)).andExpect(jsonPath("$.text").value(StudyEntry.HELP));
         assertTrue(queue.isEmpty());
@@ -100,7 +100,7 @@ class StudyAsyncResponseTests {
 
     @Test
     void badCallbackNeverQueuesOrSaves() throws Exception {
-        mvc(queue::add).perform(request("2026-10-12 19:00 20:30 정명남 | Java", "https://mm.example.com/invalid"))
+        mvc(queue::add).perform(request("1012 1900 2030 Java", "https://mm.example.com/invalid"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장하지 않았습니다")));
         assertTrue(queue.isEmpty());
         verifyNoInteractions(notion, members, sender);
@@ -109,7 +109,7 @@ class StudyAsyncResponseTests {
     @Test
     void saturatedQueueReturnsActionWithoutNotionRequest() throws Exception {
         mvc(task -> { throw new RejectedExecutionException(); })
-                .perform(request("2026-10-12 19:00 20:30 정명남 | Java", CALLBACK))
+                .perform(request("1012 1900 2030 Java", CALLBACK))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("접수하지 못했습니다")));
         verifyNoInteractions(notion, members, sender);
     }
@@ -117,11 +117,11 @@ class StudyAsyncResponseTests {
     @Test
     void missingMemberProducesFinalFailureWithoutSave() throws Exception {
         when(members.pageIdFor("정명남")).thenReturn(Optional.empty());
-        mvc(queue::add).perform(request("2026-10-12 19:00 20:30 정명남 | Java", CALLBACK));
+        mvc(queue::add).perform(request("1012 1900 2030 Java", CALLBACK));
         queue.getFirst().run();
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(any(), result.capture());
-        assertTrue(result.getValue().text().contains("Members에서 해당 이름을 찾지 못했습니다"));
+        assertTrue(result.getValue().text().contains("연결된 이름을 Members에서 찾지 못했습니다"));
         verifyNoInteractions(notion);
     }
 }

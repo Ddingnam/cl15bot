@@ -10,6 +10,8 @@ services:
     autoDeployTrigger: commit
     healthCheckPath: /actuator/health
     envVars:
+      - key: MATTERMOST_MEMBER_MAPPINGS
+        sync: false
       - key: MATTERMOST_SLASH_TOKEN
         sync: false
       - key: NOTION_TOKEN

@@ -30,16 +30,18 @@ public class StudyCommandController {
     private final MemberRegistry members;
     private final MattermostResponseSender responseSender;
     private final Executor executor;
+    private final MattermostMemberMapping mapping;
 
     public StudyCommandController(BotProperties properties, NotionStudyClient notion, Clock clock,
             MemberRegistry members, MattermostResponseSender responseSender,
-            @Qualifier("studyExecutor") Executor executor) {
+            @Qualifier("studyExecutor") Executor executor, MattermostMemberMapping mapping) {
         this.properties = properties;
         this.notion = notion;
         this.clock = clock;
         this.members = members;
         this.responseSender = responseSender;
         this.executor = executor;
+        this.mapping = mapping;
     }
 
     @PostMapping(value = "/api/mattermost/study", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
@@ -62,16 +64,17 @@ public class StudyCommandController {
         if (text.isBlank() || text.strip().equalsIgnoreCase("help") || text.strip().equals("도움말")) {
             return ResponseEntity.ok(reply(StudyEntry.HELP));
         }
-        if (text.strip().equalsIgnoreCase("whoami")) {
+        if (text.strip().equalsIgnoreCase("whoami") || text.strip().equals("내정보")) {
             if (userId.isBlank() || userId.length() > 200) {
                 return ResponseEntity.ok(failureReply("Mattermost 사용자 정보를 확인하지 못했습니다. Mattermost에서 다시 실행하고, 계속 실패하면 관리자에게 문의해주세요."));
             }
             return ResponseEntity.ok(reply("Mattermost 사용자 ID: " + userId
-                    + "\n공부 기록에는 Members의 기존 이름을 직접 입력합니다.\n예: /study 2026-10-12 19:00 20:30 정명남 | Java 복습"));
+                    + "\n연결된 Members 이름: " + mapping.nameFor(userId).orElse("미등록")
+                    + "\n미등록이면 관리자에게 이 사용자 ID와 Members 이름을 전달해주세요."));
         }
         StudyEntry entry;
         try {
-            entry = StudyEntry.parse(text, userId, userName, channelId, ZonedDateTime.now(clock));
+            entry = StudyEntry.parse(text, mapping.nameFor(userId).orElse(null), userId, userName, channelId, ZonedDateTime.now(clock));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.ok(failureReply(ex.getMessage()));
         }
@@ -99,7 +102,7 @@ public class StudyCommandController {
         try {
             String memberPageId = members.pageIdFor(entry.memberName()).orElse(null);
             if (memberPageId == null) {
-                return ResponseEntity.ok(failureReply("Members에서 해당 이름을 찾지 못했습니다. Notion Members의 이름을 확인한 뒤 같은 이름으로 다시 입력해주세요."));
+                return ResponseEntity.ok(failureReply("연결된 이름을 Members에서 찾지 못했습니다. 관리자에게 계정 연결 이름과 Notion Members 이름의 일치 여부를 확인해달라고 요청해주세요."));
             }
             saveStarted = true;
             String pageUrl = notion.save(entry, memberPageId);

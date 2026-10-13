@@ -5,6 +5,7 @@ server:
   port: ${PORT:8080}
 
 bot:
+  mattermost-member-mappings: ${MATTERMOST_MEMBER_MAPPINGS:}
   mattermost-token: ${MATTERMOST_SLASH_TOKEN:local-test-token}
   notion-token: ${NOTION_TOKEN:}
   notion-data-source-id: ${NOTION_DATA_SOURCE_ID:}
