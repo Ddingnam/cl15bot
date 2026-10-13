@@ -3,6 +3,9 @@ package com.example.cl15bot;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import net.dv8tion.jda.api.JDA;
@@ -37,6 +40,14 @@ public class DiscordBot extends ListenerAdapter {
     private final BotProperties notionProperties;
     private final DiscordStudySessions sessions;
     private final DiscordStudyCommands commands;
+    private final ExecutorService loginExecutor = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "discord-login");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicBoolean loginStarted = new AtomicBoolean();
+    private final Object lifecycleLock = new Object();
+    private boolean stopping;
     private volatile JDA jda;
 
     public DiscordBot(DiscordProperties properties, BotProperties notionProperties,
@@ -61,16 +72,35 @@ public class DiscordBot extends ListenerAdapter {
         if (!notionProperties.hasNotionConfiguration()) {
             throw new IllegalArgumentException("Discord 실행 전에 Notion 토큰과 두 데이터 소스 ID를 설정해주세요.");
         }
-        try {
-            jda = JDABuilder.createLight(properties.botToken(), GatewayIntent.GUILD_VOICE_STATES)
-                    .setMemberCachePolicy(MemberCachePolicy.VOICE)
-                    .enableCache(CacheFlag.VOICE_STATE)
-                    .setAutoReconnect(true)
-                    .addEventListeners(this, commands).build();
-        } catch (RuntimeException ex) {
-            // Do not include exception details which may contain credentials or HTTP data.
-            throw new IllegalStateException("Discord 연결 초기화에 실패했습니다. 봇 토큰과 설정을 확인해주세요.");
+        synchronized (lifecycleLock) {
+            if (stopping || !loginStarted.compareAndSet(false, true)) return;
+            // JDA verifies the token with a blocking REST call inside build(). A long
+            // rate-limit wait must not prevent Tomcat from binding Render's PORT.
+            loginExecutor.execute(this::connect);
         }
+        log.info("Discord login started in background; web startup does not wait for Discord");
+    }
+
+    private void connect() {
+        try {
+            JDA client = buildClient();
+            synchronized (lifecycleLock) {
+                if (stopping) client.shutdownNow();
+                else jda = client;
+            }
+        } catch (RuntimeException ex) {
+            // Do not log exception messages, credentials, or HTTP response bodies.
+            log.error("Discord login failed; web service remains available. Check bot token and Discord access. type={}",
+                    ex.getClass().getSimpleName());
+        }
+    }
+
+    JDA buildClient() {
+        return JDABuilder.createLight(properties.botToken(), GatewayIntent.GUILD_VOICE_STATES)
+                .setMemberCachePolicy(MemberCachePolicy.VOICE)
+                .enableCache(CacheFlag.VOICE_STATE)
+                .setAutoReconnect(true)
+                .addEventListeners(this, commands).build();
     }
 
     @Override public void onReady(ReadyEvent event) { reconcile(event.getJDA()); }
@@ -141,7 +171,11 @@ public class DiscordBot extends ListenerAdapter {
 
     @PreDestroy
     void stop() {
-        sessions.disconnected();
-        if (jda != null) jda.shutdown();
+        synchronized (lifecycleLock) {
+            stopping = true;
+            sessions.disconnected();
+            if (jda != null) jda.shutdown();
+            loginExecutor.shutdownNow();
+        }
     }
 }
