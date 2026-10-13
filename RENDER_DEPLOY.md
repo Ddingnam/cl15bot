@@ -90,3 +90,5 @@ StudyPool 연결이 Study Log와 Members에 접근할 수 있는지 확인합니
 ## Notion 통신 오류 로그 확인
 
 Render의 서비스 Logs에서 Notion network failure를 검색합니다. 이 오류는 앱이 처리하므로 배포 상태가 Failed로 바뀌지 않으며 WARN 수준으로 표시됩니다. stage=members-query는 Members 조회 중 실패하여 저장 요청을 보내지 않은 경우이고, stage=study-save는 기록 저장 중 실패한 경우입니다. causes의 HttpConnectTimeoutException은 연결 제한, HttpTimeoutException은 요청 제한, SSLException은 TLS, UnknownHostException은 DNS 문제를 조사할 단서입니다. 실제 토큰이나 Notion 응답 본문은 기록하지 않습니다.
+
+배포 후 시작 로그의 Notion client: connectTimeout=5s requestTimeout=8s ipv4Only=true가 새 네트워크 설정 적용 확인 기준입니다. Java의 IPv4 소켓 설정과 5초 연결 제한은 경로 문제/지연을 확인하기 위한 조치입니다. 계속 HttpConnectTimeoutException이면 Render 발신 경로나 Notion 측 접속 문제를 추가로 확인해야 하며, 토큰을 반복 교체할 필요는 없습니다. Java 설정 근거: https://docs.oracle.com/en/java/javase/21/core/java-networking.html
