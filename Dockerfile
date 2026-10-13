@@ -3,6 +3,7 @@ WORKDIR /workspace
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
+RUN ./gradlew --no-daemon resolveDependencies
 COPY src ./src
 RUN ./gradlew --no-daemon test bootJar
 

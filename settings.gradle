@@ -1,1 +1,9 @@
+pluginManagement {
+    repositories {
+        // Avoid Maven Central rate limits on shared build-provider IPs.
+        maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2/') }
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = 'cl15bot'

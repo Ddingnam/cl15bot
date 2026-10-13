@@ -57,7 +57,7 @@ master push 후 On Commit 자동 배포 또는 Manual Deploy → Deploy latest c
 
 | 증상 | 확인 |
 |---|---|
-| Maven Central 429 빌드 실패 | 다운로드 제한. 반복 재시도·캐시 삭제를 피하고 잠시 뒤 배포 |
+| Maven Central 429 빌드 실패 | Google 공식 Maven Central 미러를 우선 사용하도록 설정됨. 플러그인과 앱 의존성 모두 적용. 반복 재시도·캐시 삭제를 피하고, 실패한 다운로드 URL 확인 |
 | 도움말도 없음 | 서버 UP, POST/URL/Token, MM 오류 확인 |
 | 계정 연결 없음 | 내정보 ID와 매칭 JSON 키 확인 |
 | 연결 이름 없음/중복 | 매칭 이름과 Members 제목 확인 |

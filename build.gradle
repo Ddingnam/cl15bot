@@ -14,6 +14,7 @@ java {
 }
 
 repositories {
+	maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2/') }
 	mavenCentral()
 }
 
@@ -38,6 +39,15 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// Docker can reuse this dependency layer when only application source changes.
+tasks.register('resolveDependencies') {
+	doLast {
+		['compileClasspath', 'runtimeClasspath', 'testCompileClasspath', 'testRuntimeClasspath'].each {
+			configurations.getByName(it).resolve()
+		}
+	}
 }
 
 tasks.named('bootJar') {
