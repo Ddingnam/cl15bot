@@ -32,8 +32,12 @@ class StudyAsyncResponseTests {
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-13T12:00:00Z"), ZoneId.of("Asia/Seoul"));
 
     private MockMvc mvc(Executor executor) {
+        return mvc(executor, clock);
+    }
+
+    private MockMvc mvc(Executor executor, Clock requestClock) {
         return MockMvcBuilders.standaloneSetup(new StudyCommandController(
-                new BotProperties("slash", "notion", "source", "스터디", "members"), notion, clock,
+                new BotProperties("slash", "notion", "source", "스터디", "members", "https://mm.example.com", LINK), notion, requestClock,
                 members, sender, executor, new MattermostMemberMapping("{\"u1\":\"정명남\"}"))).build();
     }
 
@@ -41,6 +45,38 @@ class StudyAsyncResponseTests {
         return post("/api/mattermost/study").contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("token", "slash").param("text", text).param("response_url", callback)
                 .param("user_id", "u1").param("user_name", "user").param("channel_id", "any-channel");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {25, 26, 30, 31})
+    void expiredQueuedRequestDoesNotSaveAndOnlyUsesAValidCallback(int minutes) throws Exception {
+        var requestClock = new DiscordStudySessionsTests.MutableClock();
+        Instant received = Instant.parse("2026-10-13T12:00:00Z");
+        requestClock.set(received.toString());
+        mvc(queue::add, requestClock).perform(request("1012 1900 2030 Java", CALLBACK))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.startsWith("⏳")));
+        requestClock.set(received.plusSeconds(minutes * 60L).toString());
+        queue.getFirst().run();
+        verifyNoInteractions(notion, members);
+        if (minutes < 30) {
+            var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
+            verify(sender).send(eq(URI.create(CALLBACK)), result.capture());
+            assertTrue(result.getValue().text().contains("대기 시간이 길어 저장하지 않았습니다"));
+        } else verifyNoInteractions(sender);
+        assertDoesNotThrow(MattermostRequestDeadline::check);
+    }
+
+    @Test void queuedRequestJustBeforeTheDeadlineStillProcessesNormally() throws Exception {
+        var requestClock = new DiscordStudySessionsTests.MutableClock();
+        Instant received = Instant.parse("2026-10-13T12:00:00Z");
+        requestClock.set(received.toString());
+        when(members.pageIdFor("정명남")).thenReturn(Optional.of("member-id"));
+        when(notion.saveToStudyLog(any(), eq("member-id"))).thenReturn(LINK);
+        mvc(queue::add, requestClock).perform(request("1012 1900 2030 Java", CALLBACK));
+        requestClock.set(received.plusSeconds(25 * 60 - 1).toString());
+        queue.getFirst().run();
+        verify(notion).saveToStudyLog(any(), eq("member-id"));
+        verify(sender).send(eq(URI.create(CALLBACK)), any());
     }
 
     @Test
@@ -56,7 +92,7 @@ class StudyAsyncResponseTests {
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(eq(URI.create(CALLBACK)), result.capture());
         assertEquals("ephemeral", result.getValue().response_type());
-        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📚 공부 내용 : Java 복습\n🔗 [Study Log 전체 기록 확인](<" + LINK + ">)", result.getValue().text());
+        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📚 공부 내용 : Java 복습\n\n🔗 [Study Log 전체 기록 확인](<" + LINK + ">)", result.getValue().text());
         verify(notion, times(1)).saveToStudyLog(any(), eq("member-id"));
     }
 
@@ -103,6 +139,26 @@ class StudyAsyncResponseTests {
         mvc(queue::add).perform(request("1012 1900 2030 Java", "https://mm.example.com/invalid"))
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장하지 않았습니다")));
         assertTrue(queue.isEmpty());
+        verifyNoInteractions(notion, members, sender);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"https://evil.example/hooks/commands/secret123",
+        "http://mm.example.com/hooks/commands/secret123", "https://mm.example.com:8443/hooks/commands/secret123",
+        "http://127.0.0.1:8080/hooks/commands/secret123"})
+    void untrustedCallbackIsRejectedBeforeSaving(String callback) throws Exception {
+        mvc(queue::add).perform(request("1012 1900 2030 Java", callback))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장하지 않았습니다")));
+        assertTrue(queue.isEmpty());
+        verifyNoInteractions(notion, members, sender);
+    }
+
+    @Test void processingMessageContainsStudyLogLinkAndNoMaximumTimePromise() throws Exception {
+        mvc(queue::add).perform(request("1012 1900 2030 Java", CALLBACK))
+                .andExpect(jsonPath("$.text").value("⏳ 공부 기록을 처리 중입니다.\n\n"
+                        + "1~2분 후에도 결과가 없으면 아래 Study Log에서\n본인 기록을 확인해주세요.\n\n"
+                        + "이미 저장됐을 수 있으니 확인 전에는 다시 입력하지 마세요.\n\n"
+                        + "🔗 [Study Log 전체 기록 확인](<" + LINK + ">)"));
         verifyNoInteractions(notion, members, sender);
     }
 

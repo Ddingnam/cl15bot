@@ -46,7 +46,7 @@ Java 21 · Spring Boot 4.1.1 · Gradle 기반 Mattermost → Notion 공부 기�
 | NOTION_DATA_SOURCE_ID | 공용 Study Log 원본 ID |
 | NOTION_MEMBERS_DATA_SOURCE_ID | Members 원본 ID |
 
-선택 변수 `NOTION_TITLE_PROPERTY`는 기본 `스터디`입니다. `.env.example`은 예시이며 `.env`를 자동 로드하지 않습니다. 기존 `MATTERMOST_ALLOWED_CHANNEL_ID`, `NOTION_MEMBER_MAPPINGS`는 사용하지 않습니다.
+선택 변수 `NOTION_TITLE_PROPERTY`는 기본 `스터디`입니다. `MATTERMOST_BASE_URL`은 기본 `https://meeting.ssafy.com`이며 callback의 스킴·호스트·포트·서브 경로가 일치해야 합니다. 다른 MM 서버를 사용하면 이 값을 변경합니다. `NOTION_STUDY_LOG_URL`은 처리 중 메시지의 전체 로그 링크이며 현재 확인한 공용 Study Log 주소가 기본값입니다. 다른 Study Log로 바꾸면 이 값도 변경합니다. `.env.example`은 예시이며 `.env`를 자동 로드하지 않습니다. 기존 `MATTERMOST_ALLOWED_CHANNEL_ID`, `NOTION_MEMBER_MAPPINGS`는 사용하지 않습니다.
 
 ## 기존 Notion 구조
 
@@ -57,14 +57,22 @@ Java 21 · Spring Boot 4.1.1 · Gradle 기반 Mattermost → Notion 공부 기�
 ## 응답
 
 ```text
-⏳ 공부 기록을 처리 중입니다. 완료되면 결과를 알려드릴게요.
-결과가 오지 않으면 재입력 전에 Notion에서 저장 여부를 확인해주세요.
+⏳ 공부 기록을 처리 중입니다.
+
+1~2분 후에도 결과가 없으면 아래 Study Log에서
+본인 기록을 확인해주세요.
+
+이미 저장됐을 수 있으니 확인 전에는 다시 입력하지 마세요.
+
+🔗 Study Log 전체 기록 확인
 ```
 
 ```text
 ✅ 정명남님의 공부 기록을 저장했습니다.
+
 🕒 2026-10-13 23:00 ~ 2026-10-14 01:00 · 120분
 📚 공부 내용 : Java 복습
+
 🔗 Study Log 전체 기록 확인 (공용 Study Log 링크)
 ```
 
@@ -99,12 +107,16 @@ Docker는 테스트·bootJar 빌드 후 Java 21 prod 프로필로 `build/libs/ap
 
 ## 운영 한계와 진단
 
-MM response_url이 있으면 입력 검증 후 처리 중 안내를 보내고 백그라운드에서 멤버 조회 → 속성 조회 → 겹침 조회 → 기록 생성 후 결과를 보냅니다. 로컬 화면처럼 response_url이 없으면 최종 결과를 직접 반환합니다. callback에 Notion 토큰을 붙이지 않으며 추가 MM 봇 토큰은 필요 없습니다.
+MM response_url이 있으면 입력 검증 후 처리 중 안내를 보내고 백그라운드에서 멤버 조회 → 속성 조회 → 겹침 조회 → 기록 생성 후 결과를 보냅니다. 접수 후 25분을 처리 기한으로 두고 대기열·멤버 잠금에서 꺼낸 뒤, 각 API 요청·재시도와 생성 직전에 확인합니다. 기한이 지난 요청은 저장하지 않으며 callback이 유효한 접수 후 30분 전까지 중단 안내를 보냅니다. 이미 30분이 지났으면 callback을 보내지 않고 로그만 남깁니다. 재시도 대기도 25분 기한을 넘길 수 없습니다. 이미 시작한 생성 요청의 결과는 기한이 지나도 임의로 실패·미저장으로 바꾸지 않습니다. 로컬 화면처럼 response_url이 없으면 최종 결과를 직접 반환합니다. callback에 Notion 토큰을 붙이지 않으며 추가 MM 봇 토큰은 필요 없습니다.
 
-Notion 연결 제한은 5초, 응답 제한은 8초입니다. 작업 스레드는 2~4개, 대기 한도는 50개입니다. 대기 작업은 메모리에 있어 강제 종료·재배포 때 유실될 수 있습니다. 겹침 조회와 저장은 별도 요청이라 동시 입력의 중복을 완전히 막지 못합니다. 불확실한 저장 결과를 무조건 재시도하지 않습니다.
+만료는 requestId와 stage=processing-expired, callback-expired 로그로 확인합니다. 429 응답 본문·메타데이터를 읽다가 통신이 끊겨도 finally에서 응답 자원을 정리하며 생성 요청을 다시 실행하지 않습니다.
 
-MM callback 연결 제한은 3초, 응답 제한은 5초입니다. 결과 메시지 실패와 Notion 저장 실패를 구분하며 결과가 없으면 Notion을 먼저 확인합니다. callback 302 리다이렉트를 실패로 감지하지 못하는 문제는 별도 보완 대상으로 남아 있습니다.
+Notion 연결 제한은 5초, 응답 제한은 8초입니다. 요청량 제한 429는 Retry-After를 존중해 API 호출당 최대 2회 재시도하며 공유 cooldown 동안 다른 Notion 요청도 대기합니다. 한 기록의 멤버 조회·속성 조회·겹침 검사·생성 단계는 처리 시작 기준 2분의 재시도 대기 한도를 공유합니다. 그보다 긴 제한이면 기다리는 시간을 줄여 재요청하지 않고 실패를 안내합니다. API 접근 차단 429는 재시도하지 않습니다. 조회는 일시적 네트워크·500/502/503/504/529 오류도 제한적으로 재시도하지만 생성의 네트워크·5xx 오류는 자동 재생성하지 않습니다. 1~2분 안내는 확인 권장 시간이며 대기열·HTTP 응답 시간을 포함한 최대 처리 시간 보장이 아닙니다.
+
+작업 스레드는 2~4개, 대기 한도는 50개입니다. 대기 작업은 메모리에 있어 강제 종료·재배포 때 유실될 수 있습니다. 같은 앱 안에서는 공통 멤버 잠금으로 겹침 검사와 저장을 직렬화하며 여러 프로세스 간 중복은 완전히 막지 못합니다.
+
+MM callback 연결 제한은 3초, 응답 제한은 5초입니다. 2xx만 전달 성공으로 판정하며 302/307 등은 실패 로그를 남깁니다. 리다이렉트·callback 재전송·Notion 재저장은 하지 않습니다. 결과 메시지 실패와 Notion 저장 실패를 구분하며 결과가 없으면 Notion을 먼저 확인합니다.
 
 Render Free는 요청이 15분간 없으면 절전할 수 있습니다. 초기 기동 지연은 비동기 처리로 해결되지 않습니다. 테스트 전 health UP을 확인합니다. Maven Central 다운로드 429와 Notion API 429는 별개입니다.
 
-로그의 stage=members-query, study-schema, overlap-query, study-save와 예외 타입으로 확인합니다. Mattermost final response delivery failed는 메시지 전달 실패입니다. 토큰과 callback URL은 로그·커밋에 적지 않습니다.
+MM 작업은 requestId로 stage=accepting, accepted, processing, save-completed, result-ready, delivery-completed 로그를 연결합니다. queue-rejected와 Mattermost final response delivery failed는 접수 실패·메시지 전달 실패입니다. Notion 오류 stage=members-query, study-schema, overlap-query, study-save와 예외 타입도 확인합니다. 처리 완료 로그는 영구 작업 기록이 아니며 비정상 종료 후 자동 복구는 지원하지 않습니다. 토큰·callback URL·사용자 입력은 로그에 적지 않습니다.

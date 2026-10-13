@@ -5,6 +5,10 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.ZonedDateTime;
 import java.net.URI;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public class StudyCommandController {
+    private static final Logger log = LoggerFactory.getLogger(StudyCommandController.class);
     private final BotProperties properties;
     private final StudyRecordingService recording;
     private final Clock clock;
@@ -89,16 +94,43 @@ public class StudyCommandController {
         if (responseUrl.isBlank()) return process(entry);
         URI responseUri;
         try {
-            responseUri = MattermostResponseSender.responseUri(responseUrl);
+            responseUri = MattermostResponseSender.responseUri(responseUrl, properties.mattermostBaseUrl());
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.ok(failureReply("Mattermost 결과 전송 주소를 확인하지 못했습니다. 저장하지 않았습니다. 관리자에게 명령어 연결 확인을 요청해주세요."));
         }
+        String requestId = UUID.randomUUID().toString();
+        var receivedAt = clock.instant();
         try {
-            executor.execute(() -> responseSender.send(responseUri, process(entry).getBody()));
+            log.info("Study request: requestId={} stage=accepting", requestId);
+            executor.execute(() -> {
+                try (var context = MDC.putCloseable("studyRequestId", requestId)) {
+                    log.info("Study request: requestId={} stage=processing", requestId);
+                    CommandResponse result;
+                    try {
+                        result = MattermostRequestDeadline.within(clock, receivedAt, () -> process(entry).getBody());
+                    } catch (MattermostRequestDeadline.ExpiredException ex) {
+                        log.warn("Study request: requestId={} stage=processing-expired", requestId);
+                        result = failureReply(ex.getMessage());
+                    }
+                    log.info("Study request: requestId={} stage=result-ready outcome={}", requestId,
+                            result != null && result.text().startsWith("✅") ? "saved" : "not-confirmed");
+                    if (clock.instant().isBefore(receivedAt.plus(MattermostRequestDeadline.CALLBACK_LIMIT))) {
+                        responseSender.send(responseUri, result);
+                    } else {
+                        log.warn("Study request: requestId={} stage=callback-expired; result not delivered", requestId);
+                    }
+                }
+            });
+            log.info("Study request: requestId={} stage=accepted", requestId);
         } catch (RejectedExecutionException ex) {
+            log.warn("Study request: requestId={} stage=queue-rejected", requestId);
             return ResponseEntity.ok(failureReply("현재 처리 중인 요청이 많아 접수하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 다시 입력해주세요."));
         }
-        return ResponseEntity.ok(reply("⏳ 공부 기록을 처리 중입니다. 완료되면 결과를 알려드릴게요.\n결과가 오지 않으면 재입력 전에 Notion에서 저장 여부를 확인해주세요."));
+        String studyLogUrl = NotionStudyClient.pageLink(null, properties.notionStudyLogUrl());
+        return ResponseEntity.ok(reply("⏳ 공부 기록을 처리 중입니다.\n\n"
+                + "1~2분 후에도 결과가 없으면 아래 Study Log에서\n본인 기록을 확인해주세요.\n\n"
+                + "이미 저장됐을 수 있으니 확인 전에는 다시 입력하지 마세요."
+                + (studyLogUrl.isEmpty() ? "" : "\n\n🔗 [Study Log 전체 기록 확인](<" + studyLogUrl + ">)")));
     }
 
     private ResponseEntity<CommandResponse> process(StudyEntry entry) {

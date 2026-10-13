@@ -58,7 +58,7 @@ class StudyCommandControllerTests {
     void storesStudyWithKoreanDateAndRepliesPrivately() throws Exception {
         mvc.perform(command("1012 0000 0100 Java 스트림 복습"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.response_type").value("ephemeral"))
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java 스트림 복습", saved.getValue().subject());
@@ -242,7 +242,7 @@ class StudyCommandControllerTests {
     @Test
     void crossingMidnightUsesStartDateAndExactDuration() throws Exception {
         mvc.perform(command("1011 2300 1012 0100 Java")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-11 23:00 ~ 2026-10-12 01:00 · 120분\n📚 공부 내용 : Java"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-11 23:00 ~ 2026-10-12 01:00 · 120분\n📚 공부 내용 : Java"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("2026-10-11", saved.getValue().date().toString());
@@ -259,7 +259,7 @@ class StudyCommandControllerTests {
     @Test
     void multilineSubjectIsDisplayedOnOneLineButStoredUnmodified() throws Exception {
         mvc.perform(command("1012 0000 0100 Java\n스트림 복습"))
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java\n스트림 복습", saved.getValue().subject());

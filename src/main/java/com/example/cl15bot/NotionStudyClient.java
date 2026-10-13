@@ -53,6 +53,7 @@ public class NotionStudyClient {
                 columns.get("이름"), Map.of("relation", List.of(Map.of("id", memberPageId))),
                 columns.get("시작 시간"), Map.of("date", Map.of("start", entry.startTime().toOffsetDateTime().toString())),
                 columns.get("종료 시간"), Map.of("date", Map.of("start", entry.endTime().toOffsetDateTime().toString())));
+        MattermostRequestDeadline.check();
         StudyPage saved = client.post().uri("/pages")
                 .body(Map.of("parent", Map.of("type", "data_source_id",
                         "data_source_id", properties.notionDataSourceId()), "properties", fields))

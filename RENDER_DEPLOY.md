@@ -20,6 +20,8 @@
 
 render.yaml은 다섯 설정을 sync: false로 정의합니다. 기존 서비스에서는 새 변수를 직접 등록합니다. Git push만으로 실제 계정 매칭 값이 등록되지는 않습니다.
 
+MM callback은 기본 `https://meeting.ssafy.com`의 스킴·호스트·포트만 허용합니다. 다른 주소나 서브 경로를 사용하면 `MATTERMOST_BASE_URL`에 정확한 기본 URL을 등록합니다. 처리 중 메시지는 현재 공용 Study Log 링크를 사용하며, 다른 데이터 원본으로 변경할 때 `NOTION_STUDY_LOG_URL`도 변경합니다. 현재 서버·Study Log 그대로라면 두 선택 변수를 추가할 필요는 없습니다.
+
 ## MM 설정 변경
 
 Integrations → Slash Commands → 기존 명령 편집:
@@ -49,7 +51,7 @@ Live 상태와 `/actuator/health`의 UP을 확인합니다.
 
 0230 같은 없는 날짜, 2400 같은 시각, 종료 날짜 없는 역순 시각, 미래 종료, 1440분 초과, 연도 넘김과 미등록 계정은 거절됩니다. 같은 멤버의 부분·동일 구간은 거절하고 끝점만 맞닿으면 허용합니다. 네 자리 숫자로 시작하는 공부 내용 대신 `문제 1234 풀이`처럼 설명을 앞에 씁니다.
 
-정상 입력은 처리 중 안내 후 최종 결과를 비공개 전송합니다. Discord 연결은 아직 구현하지 않았습니다.
+정상 입력은 처리 중 안내 후 최종 결과를 비공개 전송합니다. 처리 중 메시지에는 Study Log 링크와 1~2분 후 확인 안내가 표시됩니다. 완료 메시지는 첫 줄 뒤와 링크 앞에 빈 줄이 있습니다. MM만 오픈할 때는 `DISCORD_BOT_TOKEN`을 비워 Discord를 비활성화합니다.
 
 ## 재배포·진단
 
@@ -66,6 +68,6 @@ master push 후 On Commit 자동 배포 또는 Manual Deploy → Deploy latest c
 | 처리 중 이후 결과 없음 | Notion 저장 확인, Mattermost final response delivery failed 로그 |
 | 입력 형식 실패 | MMDD·HHmm 네 자리와 필수 내용 |
 
-Render Free는 들어오는 요청이 15분간 없으면 절전하며 첫 요청이 지연될 수 있습니다. health를 먼저 확인합니다. 작업이 메모리에 있어 강제 종료·재배포 중 유실될 수 있고 동시 저장 중복도 완전히 막지 못합니다. callback 302 실패 감지 문제도 별도 보완 대상으로 남아 있습니다.
+Render Free는 들어오는 요청이 15분간 없으면 절전하며 첫 요청이 지연될 수 있습니다. health를 먼저 확인합니다. 작업이 메모리에 있어 강제 종료·재배포 중 유실될 수 있고 여러 프로세스 간 동시 저장 중복도 완전히 막지 못합니다. callback 302/307 등 모든 비-2xx는 실패 로그를 남기며 자동으로 이동·재전송하지 않습니다. Notion 요청량 제한은 Retry-After를 존중해 API 호출당 최대 2회, 한 기록의 재시도 대기는 처리 시작 기준 2분까지입니다. 1~2분 사용자 안내는 최대 처리 시간 보장이 아닙니다. 불확실한 생성은 자동 재시도하지 않습니다.
 
 공식 문서: https://render.com/docs/deploys · https://render.com/docs/free · https://developers.mattermost.com/integrate/slash-commands/custom/

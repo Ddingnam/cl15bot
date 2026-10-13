@@ -12,6 +12,37 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 
 class MattermostResponseSenderTests {
+    @ParameterizedTest
+    @ValueSource(ints = {302, 307, 429, 500})
+    void nonSuccessDeliveryIsLoggedAndNeverFollowedOrRetried(int code) {
+        var builder = MattermostResponseSender.clientBuilder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MattermostResponseSender.class);
+        var capture = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        capture.start();
+        logger.addAppender(capture);
+        try {
+            server.expect(requestTo("https://mm.example.com/hooks/commands/secret123"))
+                    .andRespond(withStatus(org.springframework.http.HttpStatusCode.valueOf(code))
+                            .header("Location", "https://evil.example/hooks/commands/secret123"));
+            new MattermostResponseSender(builder.build()).send(URI.create("https://mm.example.com/hooks/commands/secret123"),
+                    new StudyCommandController.CommandResponse("ephemeral", "✅ 저장 완료"));
+            server.verify();
+            assertTrue(capture.list.stream().anyMatch(event -> event.getFormattedMessage().contains("HTTP=" + code)));
+            assertTrue(capture.list.stream().noneMatch(event -> event.getFormattedMessage().contains("secret123")
+                    || event.getFormattedMessage().contains("evil.example")));
+        } finally { logger.detachAppender(capture); capture.stop(); }
+    }
+
+    @Test void callbackOriginIncludesSchemePortAndSubpath() {
+        assertEquals("https://mm.example.com:443/team/hooks/commands/token123",
+                MattermostResponseSender.responseUri("https://mm.example.com:443/team/hooks/commands/token123",
+                        "https://mm.example.com/team/").toString());
+        assertThrows(IllegalArgumentException.class, () -> MattermostResponseSender.responseUri(
+                "https://mm.example.com/hooks/commands/token123", "https://mm.example.com/team"));
+        assertThrows(IllegalArgumentException.class, () -> MattermostResponseSender.responseUri(
+                "https://mm.example.com/hooks/commands/token123", ""));
+    }
     @Test
     void sendsPrivateJsonResultWithoutNotionOrSlashCredentials() {
         var builder = MattermostResponseSender.clientBuilder();

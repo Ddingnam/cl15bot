@@ -30,6 +30,28 @@ class NotionStudyClientTests {
                 ZonedDateTime.parse("2026-10-12T18:30:00+09:00[Asia/Seoul]"));
     }
 
+    @org.junit.jupiter.api.Test
+    void expiryDuringOverlapQueryStopsBeforePageCreation() {
+        var clock = new DiscordStudySessionsTests.MutableClock();
+        var received = java.time.Instant.parse("2026-10-13T12:00:00Z");
+        clock.set(received.toString());
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        NotionStudyClient client = new NotionStudyClient(
+                new BotProperties("slash", "notion", "source-id", "스터디", "members"), builder.build());
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id"))
+                .andRespond(withSuccess(SCHEMA.formatted("", ""), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id/query"))
+                .andRespond(request -> {
+                    clock.set(received.plusSeconds(25 * 60).toString());
+                    return withSuccess("{\"results\":[],\"has_more\":false}", MediaType.APPLICATION_JSON)
+                            .createResponse(request);
+                });
+        assertThrows(MattermostRequestDeadline.ExpiredException.class,
+                () -> MattermostRequestDeadline.within(clock, received, () -> client.save(entry(), "member-id")));
+        server.verify();
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void successLinksToParentDatabaseForMattermostAndCreatedPageForDiscord(boolean mattermost) {

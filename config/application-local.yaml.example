@@ -7,6 +7,7 @@ server:
 bot:
   mattermost-member-mappings: ${MATTERMOST_MEMBER_MAPPINGS:}
   mattermost-token: ${MATTERMOST_SLASH_TOKEN:local-test-token}
+  mattermost-base-url: ${MATTERMOST_BASE_URL:https://meeting.ssafy.com}
   notion-token: ${NOTION_TOKEN:}
   notion-data-source-id: ${NOTION_DATA_SOURCE_ID:}
   notion-title-property: 스터디
