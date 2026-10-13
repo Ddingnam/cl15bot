@@ -5,4 +5,6 @@
 build
 .settings
 .env*
-src/main/resources/application-local.yaml
+src/main/resources/application-local.*
+src/main/resources/application-secrets.*
+secrets

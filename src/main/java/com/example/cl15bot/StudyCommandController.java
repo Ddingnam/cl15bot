@@ -58,7 +58,7 @@ public class StudyCommandController {
                 return ResponseEntity.ok(reply("Mattermost 사용자 ID가 없습니다."));
             }
             return ResponseEntity.ok(reply("Mattermost 사용자 ID: " + userId
-                    + "\n관리자가 이 ID를 Members의 회원 페이지와 연결해야 합니다."));
+                    + "\n공부 기록에는 Members의 기존 이름을 직접 입력합니다.\n예: /study 60 정명남 | Java 복습"));
         }
         StudyEntry entry;
         try {
@@ -67,17 +67,19 @@ public class StudyCommandController {
             return ResponseEntity.ok(reply(ex.getMessage()));
         }
         if (!properties.hasNotionConfiguration()) {
-            return ResponseEntity.ok(reply("관리자가 NOTION_TOKEN, NOTION_DATA_SOURCE_ID와 제목 속성을 설정해야 합니다."));
-        }
-        String memberPageId = members.pageIdFor(userId).orElse(null);
-        if (memberPageId == null) {
-            return ResponseEntity.ok(reply("등록되지 않은 회원입니다. /study whoami로 ID를 확인하고 관리자에게 회원 연결을 요청해주세요."));
+            return ResponseEntity.ok(reply("관리자가 NOTION_TOKEN, NOTION_DATA_SOURCE_ID, NOTION_MEMBERS_DATA_SOURCE_ID와 제목 속성을 설정해야 합니다."));
         }
         try {
+            String memberPageId = members.pageIdFor(entry.memberName()).orElse(null);
+            if (memberPageId == null) {
+                return ResponseEntity.ok(reply("Members에서 해당 이름을 찾지 못했습니다. 기존 멤버 페이지의 이름을 정확히 입력해주세요.\n" + StudyEntry.HELP));
+            }
             notion.save(entry, memberPageId);
             DateTimeFormatter format = DateTimeFormatter.ofPattern("MM-dd HH:mm");
             return ResponseEntity.ok(reply("✅ 공부 " + entry.minutes() + "분을 Notion에 저장했습니다.\n"
                     + entry.startTime().format(format) + " ~ " + entry.endTime().format(format) + " (한국 시간)"));
+        } catch (MemberRegistry.DuplicateMemberException ex) {
+            return ResponseEntity.ok(reply(ex.getMessage()));
         } catch (RestClientResponseException ex) {
             log.warn("Notion rejected study entry: HTTP {}", ex.getStatusCode().value());
             String message = switch (ex.getStatusCode().value()) {

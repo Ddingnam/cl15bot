@@ -1,0 +1,12 @@
+# Copy to src/main/resources/application-local.yaml, then activate the local profile.
+# Change blank defaults to your real values, or provide the environment variables in STS.
+server:
+  address: 127.0.0.1
+  port: ${PORT:8080}
+
+bot:
+  mattermost-token: ${MATTERMOST_SLASH_TOKEN:local-test-token}
+  notion-token: ${NOTION_TOKEN:}
+  notion-data-source-id: ${NOTION_DATA_SOURCE_ID:}
+  notion-title-property: 스터디
+  notion-members-data-source-id: ${NOTION_MEMBERS_DATA_SOURCE_ID:}

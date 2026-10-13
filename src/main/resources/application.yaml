@@ -20,4 +20,4 @@ bot:
   notion-token: ${NOTION_TOKEN:}
   notion-data-source-id: ${NOTION_DATA_SOURCE_ID:}
   notion-title-property: ${NOTION_TITLE_PROPERTY:스터디}
-  notion-member-mappings: ${NOTION_MEMBER_MAPPINGS:}
+  notion-members-data-source-id: ${NOTION_MEMBERS_DATA_SOURCE_ID:}

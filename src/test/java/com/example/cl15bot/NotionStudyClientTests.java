@@ -33,7 +33,7 @@ class NotionStudyClientTests {
                 .andExpect(jsonPath("$.properties['총 공부 시간']").doesNotExist())
                 .andExpect(jsonPath("$.properties['시즌 학습 시간 (분)']").doesNotExist())
                 .andRespond(withSuccess("{\"id\":\"page-123\"}", MediaType.APPLICATION_JSON));
-        client.save(new StudyEntry(60, "Java 복습", "u1", "홍길동", "c1",
+        client.save(new StudyEntry(60, "Java 복습", "홍길동", "u1", "홍길동", "c1",
                 ZonedDateTime.parse("2026-10-12T18:30:00+09:00[Asia/Seoul]")),
                 "00000000-0000-0000-0000-000000000001");
         server.verify();

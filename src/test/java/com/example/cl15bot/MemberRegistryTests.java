@@ -1,29 +1,46 @@
 package com.example.cl15bot;
 
 import static org.junit.jupiter.api.Assertions.*;
-
-import org.junit.jupiter.api.Test;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 class MemberRegistryTests {
-    private MemberRegistry registry(String mappings) {
-        return new MemberRegistry(new BotProperties("", "", "", "스터디", mappings));
-    }
-
-    @Test
-    void resolvesMembersSeparatelyAndNormalizesPageIds() {
-        MemberRegistry members = registry("u1=00000000000000000000000000000001,u2=00000000-0000-0000-0000-000000000002");
-        assertEquals("00000000-0000-0000-0000-000000000001", members.pageIdFor("u1").orElseThrow());
-        assertEquals("00000000-0000-0000-0000-000000000002", members.pageIdFor("u2").orElseThrow());
-        assertTrue(members.pageIdFor("unknown").isEmpty());
-        assertTrue(registry("").pageIdFor("u1").isEmpty());
-    }
-
     @ParameterizedTest
-    @ValueSource(strings = {"u1=bad", "u1", "=00000000000000000000000000000001",
-            "u1=00000000000000000000000000000001,", "u1=00000000000000000000000000000001,u1=00000000000000000000000000000002"})
-    void rejectsMalformedOrDuplicateMappings(String mappings) {
-        assertThrows(IllegalArgumentException.class, () -> registry(mappings));
+    @ValueSource(strings = {"found", "missing", "duplicate", "has-more", "malformed"})
+    void queriesExactExistingTitleAndRequiresExactlyOneMember(String scenario) {
+        BotProperties properties = new BotProperties("slash", "notion-secret", "study-source", "스터디", "members-source");
+        RestClient.Builder builder = BotConfiguration.notionClientBuilder(properties);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        MemberRegistry registry = new MemberRegistry(new NotionStudyClient(properties, builder.build()));
+        String response = switch (scenario) {
+            case "found" -> "{\"results\":[{\"id\":\"member-1\"}],\"has_more\":false}";
+            case "missing" -> "{\"results\":[],\"has_more\":false}";
+            case "duplicate" -> "{\"results\":[{\"id\":\"member-1\"},{\"id\":\"member-2\"}],\"has_more\":false}";
+            case "has-more" -> "{\"results\":[{\"id\":\"member-1\"}],\"has_more\":true}";
+            default -> "{}";
+        };
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/members-source/query"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer notion-secret"))
+                .andExpect(header("Notion-Version", "2025-09-03"))
+                .andExpect(jsonPath("$.filter.property").value("title"))
+                .andExpect(jsonPath("$.filter.title.equals").value("정명남"))
+                .andExpect(jsonPath("$.page_size").value(2))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        switch (scenario) {
+            case "found" -> assertEquals("member-1", registry.pageIdFor("정명남").orElseThrow());
+            case "missing" -> assertTrue(registry.pageIdFor("정명남").isEmpty());
+            case "malformed" -> assertThrows(org.springframework.web.client.RestClientException.class,
+                    () -> registry.pageIdFor("정명남"));
+            default -> assertThrows(MemberRegistry.DuplicateMemberException.class,
+                    () -> registry.pageIdFor("정명남"));
+        }
+        server.verify();
     }
 }

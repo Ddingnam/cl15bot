@@ -4,4 +4,12 @@ build
 .git
 .settings
 .env*
-src/main/resources/application-local.yaml
+src/main/resources/application-local.*
+src/main/resources/application-secrets.*
+secrets
+config
+scripts
+*.launch
+*.log
+logs
+cl15bot-deploy.zip

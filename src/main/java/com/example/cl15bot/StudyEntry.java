@@ -4,9 +4,9 @@ import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
-public record StudyEntry(int minutes, String subject, String userId, String userName,
+public record StudyEntry(int minutes, String subject, String memberName, String userId, String userName,
         String channelId, ZonedDateTime endTime) {
-    public static final String HELP = "사용법: /study <분(1~1440)> <공부 내용>\n예: /study 60 Java 스트림 복습\n입력 시점을 종료 시간으로 기록합니다.\n내 사용자 ID 확인: /study whoami";
+    public static final String HELP = "사용법: /study <분(1~1440)> <Members 이름> | <공부 내용>\n예: /study 60 정명남 | Java 스트림 복습\nMembers의 기존 이름과 정확히 일치해야 합니다.\n입력 시점을 종료 시간으로 기록합니다.\n내 사용자 ID 확인: /study whoami";
 
     public ZonedDateTime startTime() {
         return endTime.minusMinutes(minutes);
@@ -31,12 +31,17 @@ public record StudyEntry(int minutes, String subject, String userId, String user
         if (minutes < 1 || minutes > 1440 || parts.length != 2 || parts[1].isBlank()) {
             throw new IllegalArgumentException(HELP);
         }
+        String[] namedSubject = parts[1].split("\\|", 2);
+        if (namedSubject.length != 2 || namedSubject[0].isBlank() || namedSubject[1].isBlank()
+                || namedSubject[0].strip().length() > 200) {
+            throw new IllegalArgumentException(HELP);
+        }
         if (userId == null || userId.isBlank() || userName == null || userName.isBlank()
                 || userId.length() > 200 || userName.length() > 200
                 || channelId == null || channelId.isBlank() || channelId.length() > 200) {
             throw new IllegalArgumentException("Mattermost 사용자 또는 채널 정보가 없습니다.");
         }
-        return new StudyEntry(minutes, parts[1].strip(), userId, userName, channelId,
+        return new StudyEntry(minutes, namedSubject[1].strip(), namedSubject[0].strip(), userId, userName, channelId,
                 endTime.truncatedTo(ChronoUnit.MINUTES));
     }
 }

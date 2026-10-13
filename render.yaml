@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: cl15bot
+    runtime: docker
+    branch: master
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: MATTERMOST_SLASH_TOKEN
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: NOTION_DATA_SOURCE_ID
+        sync: false
+      - key: NOTION_MEMBERS_DATA_SOURCE_ID
+        sync: false

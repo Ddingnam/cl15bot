@@ -2,6 +2,7 @@ package com.example.cl15bot;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -28,6 +29,31 @@ public class NotionStudyClient {
                         "data_source_id", properties.notionDataSourceId()), "properties", fields))
                 .retrieve().toBodilessEntity();
     }
+
+    public Optional<String> findMemberPageId(String memberName) {
+        MemberQuery response = client.post()
+                .uri("/data_sources/{id}/query", properties.notionMembersDataSourceId())
+                .body(Map.of("filter", Map.of("property", "title",
+                        "title", Map.of("equals", memberName)), "page_size", 2))
+                .retrieve().body(MemberQuery.class);
+        if (response == null || response.results() == null) {
+            throw new org.springframework.web.client.RestClientException("Invalid Members query response");
+        }
+        if (response.has_more() || response.results().size() > 1) {
+            throw new MemberRegistry.DuplicateMemberException();
+        }
+        if (response.results().isEmpty()) {
+            return Optional.empty();
+        }
+        String id = response.results().getFirst().id();
+        if (id == null || id.isBlank()) {
+            throw new org.springframework.web.client.RestClientException("Missing Members page ID");
+        }
+        return Optional.of(id);
+    }
+
+    public record MemberQuery(List<MemberPage> results, boolean has_more) { }
+    public record MemberPage(String id) { }
 
     private static List<Map<String, Object>> richText(String content) {
         return List.of(Map.of("type", "text", "text", Map.of("content", content)));
