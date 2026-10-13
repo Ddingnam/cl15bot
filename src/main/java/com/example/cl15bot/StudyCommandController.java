@@ -44,72 +44,107 @@ public class StudyCommandController {
             @RequestParam(name = "channel_id", defaultValue = "") String channelId) {
         if (!properties.hasMattermostToken()) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(reply("관리자가 MATTERMOST_SLASH_TOKEN을 설정해야 합니다."));
+                    .body(failureReply("봇 설정이 완료되지 않아 저장할 수 없습니다. 관리자에게 봇 설정 확인을 요청해주세요."));
         }
         if (!MessageDigest.isEqual(properties.mattermostToken().getBytes(StandardCharsets.UTF_8),
                 token.getBytes(StandardCharsets.UTF_8))) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(reply("인증에 실패했습니다."));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(failureReply("명령어 인증에 실패했습니다. 관리자에게 Mattermost 명령어 연결 확인을 요청해주세요."));
+        }
+        if (!properties.hasAllowedChannel()) {
+            return ResponseEntity.ok(failureReply("허용 채널 설정이 완료되지 않아 사용할 수 없습니다. 관리자에게 허용 채널 설정 확인을 요청해주세요."));
+        }
+        if (!properties.allowsChannel(channelId)) {
+            return ResponseEntity.ok(failureReply("이 명령어는 지정된 공부 기록 채널에서만 사용할 수 있습니다. 공부 기록 채널로 이동해 다시 입력해주세요."));
         }
         if (text.isBlank() || text.strip().equalsIgnoreCase("help") || text.strip().equals("도움말")) {
             return ResponseEntity.ok(reply(StudyEntry.HELP));
         }
         if (text.strip().equalsIgnoreCase("whoami")) {
             if (userId.isBlank() || userId.length() > 200) {
-                return ResponseEntity.ok(reply("Mattermost 사용자 ID가 없습니다."));
+                return ResponseEntity.ok(failureReply("Mattermost 사용자 정보를 확인하지 못했습니다. Mattermost에서 다시 실행하고, 계속 실패하면 관리자에게 문의해주세요."));
             }
             return ResponseEntity.ok(reply("Mattermost 사용자 ID: " + userId
-                    + "\n공부 기록에는 Members의 기존 이름을 직접 입력합니다.\n예: /study 60 정명남 | Java 복습"));
+                    + "\n공부 기록에는 Members의 기존 이름을 직접 입력합니다.\n예: /study 2026-10-12 19:00 20:30 정명남 | Java 복습"));
         }
         StudyEntry entry;
         try {
             entry = StudyEntry.parse(text, userId, userName, channelId, ZonedDateTime.now(clock));
         } catch (IllegalArgumentException ex) {
-            return ResponseEntity.ok(reply(ex.getMessage()));
+            return ResponseEntity.ok(failureReply(ex.getMessage()));
         }
         if (!properties.hasNotionConfiguration()) {
-            return ResponseEntity.ok(reply("관리자가 NOTION_TOKEN, NOTION_DATA_SOURCE_ID, NOTION_MEMBERS_DATA_SOURCE_ID와 제목 속성을 설정해야 합니다."));
+            return ResponseEntity.ok(failureReply("Notion 연결 설정이 완료되지 않아 저장할 수 없습니다. 관리자에게 Notion 연결 설정 확인을 요청해주세요."));
         }
         boolean saveStarted = false;
         try {
             String memberPageId = members.pageIdFor(entry.memberName()).orElse(null);
             if (memberPageId == null) {
-                return ResponseEntity.ok(reply("Members에서 해당 이름을 찾지 못했습니다. 기존 멤버 페이지의 이름을 정확히 입력해주세요.\n" + StudyEntry.HELP));
+                return ResponseEntity.ok(failureReply("Members에서 해당 이름을 찾지 못했습니다. Notion Members의 이름을 확인한 뒤 같은 이름으로 다시 입력해주세요."));
             }
             saveStarted = true;
             notion.save(entry, memberPageId);
-            DateTimeFormatter format = DateTimeFormatter.ofPattern("MM-dd HH:mm");
-            return ResponseEntity.ok(reply("✅ 공부 " + entry.minutes() + "분을 Notion에 저장했습니다.\n"
-                    + entry.startTime().format(format) + " ~ " + entry.endTime().format(format) + " (한국 시간)"));
+            DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            String end = entry.date().equals(entry.endTime().toLocalDate())
+                    ? entry.endTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                    : entry.endTime().format(format);
+            return ResponseEntity.ok(reply("✅ " + display(entry.memberName()) + "님의 공부 기록을 저장했습니다.\n"
+                    + "🕒 " + entry.startTime().format(format) + " ~ " + end + " · " + entry.minutes() + "분\n"
+                    + "📚 공부 내용 : " + display(entry.subject())));
+        } catch (NotionStudyClient.OverlappingStudyException ex) {
+            return ResponseEntity.ok(failureReply(ex.getMessage()));
+        } catch (NotionStudyClient.StudyPreflightException ex) {
+            log.warn("Notion preflight failure: stage={} causes={}", ex.stage(), exceptionTypes(ex));
+            if (ex.getCause() instanceof RestClientResponseException response) {
+                return ResponseEntity.ok(failureReply(notionHttpFailure(response.getStatusCode().value(), false)));
+            }
+            return ResponseEntity.ok(failureReply("Notion 조회를 완료하지 못해 저장 요청을 보내지 않았습니다. 잠시 후 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요."));
         } catch (NotionStudyClient.StudySchemaException ex) {
-            return ResponseEntity.ok(reply(ex.getMessage()));
+            return ResponseEntity.ok(failureReply(ex.getMessage()));
         } catch (MemberRegistry.DuplicateMemberException ex) {
-            return ResponseEntity.ok(reply(ex.getMessage()));
+            return ResponseEntity.ok(failureReply(ex.getMessage()));
         } catch (RestClientResponseException ex) {
             log.warn("Notion request rejected: stage={} HTTP={}",
                     saveStarted ? "study-save" : "members-query", ex.getStatusCode().value());
-            String message = switch (ex.getStatusCode().value()) {
-                case 401, 403 -> "Notion 토큰 또는 데이터베이스 연결 권한을 확인해주세요.";
-                case 404 -> "Notion 데이터 소스 ID와 데이터베이스 연결 권한을 확인해주세요.";
-                case 400 -> "Notion 속성 이름과 타입을 README의 표에 맞춰주세요.";
-                case 429 -> "Notion 요청이 많습니다. 잠시 후 다시 입력해주세요.";
-                default -> "Notion 오류로 저장 결과를 확인하지 못했습니다. 재입력 전에 데이터베이스를 확인해주세요.";
-            };
-            return ResponseEntity.ok(reply(message));
+            String message = notionHttpFailure(ex.getStatusCode().value(), saveStarted);
+            return ResponseEntity.ok(failureReply(message));
         } catch (ResourceAccessException ex) {
             log.warn("Notion network failure: stage={} causes={}",
                     saveStarted ? "study-save" : "members-query", exceptionTypes(ex));
             if (!saveStarted) {
-                return ResponseEntity.ok(reply("Members 조회 중 Notion 연결 시간 초과 또는 통신 오류가 발생했습니다. 공부 기록 저장 요청은 보내지 않았습니다. 관리자에게 Render Logs의 'Notion network failure' 확인을 요청해주세요."));
+                return ResponseEntity.ok(failureReply("Notion 연결 문제로 멤버를 조회하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요."));
             }
-            return ResponseEntity.ok(reply("Study Log 저장 중 Notion 연결 시간 초과 또는 통신 오류가 발생했습니다. 중복을 피하려면 재입력 전에 데이터베이스를 확인해주세요."));
+            return ResponseEntity.ok(failureReply(uncertainSave()));
         } catch (RestClientException ex) {
             log.warn("Notion request failed: stage={} causes={}",
                     saveStarted ? "study-save" : "members-query", exceptionTypes(ex));
             if (!saveStarted) {
-                return ResponseEntity.ok(reply("Members 조회 결과를 확인하지 못했습니다. 공부 기록 저장 요청은 보내지 않았습니다."));
+                return ResponseEntity.ok(failureReply("멤버 조회 결과를 확인하지 못해 저장 요청을 보내지 않았습니다. 잠시 후 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요."));
             }
-            return ResponseEntity.ok(reply("저장 결과를 확인하지 못했습니다. 재입력 전에 Notion을 확인해주세요."));
+            return ResponseEntity.ok(failureReply(uncertainSave()));
         }
+    }
+
+    private static CommandResponse failureReply(String text) {
+        return reply(StudyEntry.inputError(text));
+    }
+
+    private static String display(String text) {
+        return text.replaceAll("\\s+", " ");
+    }
+
+    private static String uncertainSave() {
+        return "저장 완료 여부를 확인하지 못했습니다. 재입력 전에 Notion에서 해당 멤버·시간의 기록을 확인해주세요. 기록이 없으면 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요.";
+    }
+
+    private static String notionHttpFailure(int status, boolean saveStarted) {
+        return switch (status) {
+            case 401, 403 -> "Notion 연결 권한 문제로 저장하지 못했습니다. 관리자에게 Notion 연결 권한 확인을 요청해주세요.";
+            case 404 -> "Notion 데이터베이스를 찾을 수 없어 저장하지 못했습니다. 관리자에게 데이터베이스 연결 확인을 요청해주세요.";
+            case 400 -> "Notion 기록 항목 설정이 맞지 않아 저장하지 못했습니다. 관리자에게 Study Log 설정 확인을 요청해주세요.";
+            case 429 -> "Notion 요청이 많아 저장하지 못했습니다. 잠시 후 같은 명령어로 다시 시도해주세요.";
+            default -> saveStarted ? uncertainSave()
+                    : "Notion 조회 오류로 저장 요청을 보내지 않았습니다. 잠시 후 같은 명령어로 다시 시도하고, 계속 실패하면 관리자에게 문의해주세요.";
+        };
     }
 
     private static CommandResponse reply(String text) {

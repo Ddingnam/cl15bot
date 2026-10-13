@@ -17,7 +17,7 @@ public class MemberRegistry {
 
     public static class DuplicateMemberException extends RuntimeException {
         public DuplicateMemberException() {
-            super("Members에 같은 이름이 중복 등록되어 있습니다. 이름만으로 구분할 수 없어 저장하지 않았습니다. 관리자에게 확인을 요청해주세요.");
+            super(StudyEntry.inputError("Members에 같은 이름이 중복 등록되어 있습니다. 관리자에게 확인을 요청해주세요."));
         }
     }
 }

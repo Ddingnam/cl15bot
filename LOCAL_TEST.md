@@ -11,11 +11,12 @@ StudyPool 연결이 Study Log와 Members를 모두 읽을 수 있고 Study Log�
 
 프로젝트 F5 → 필요시 Gradle → Refresh Gradle Project. Properties → Resource → Location이 현재 수정한 프로젝트 폴더인지 확인합니다.
 Run Configurations → Spring Boot App → Cl15botApplication → JRE에서 Java 21, Gradle JVM도 Java 21로 설정합니다.
-Environment에 아래 **네 개**를 각각 추가합니다. 시스템 환경변수가 아닌 이 실행 설정에만 등록합니다.
+Environment에 아래 **다섯 개**를 각각 추가합니다. 시스템 환경변수가 아닌 이 실행 설정에만 등록합니다.
 
 | 이름 | 값 |
 |---|---|
 | MATTERMOST_SLASH_TOKEN | 실제 /study 명령의 Token |
+| MATTERMOST_ALLOWED_CHANNEL_ID | `by1prkd3yty7mybdssneo4uzpw` |
 | NOTION_TOKEN | StudyPool의 API 토큰 |
 | NOTION_DATA_SOURCE_ID | Study Log 데이터 원본 ID |
 | NOTION_MEMBERS_DATA_SOURCE_ID | Members 데이터 원본 ID |
@@ -30,11 +31,12 @@ Run As → Spring Boot App으로 실행합니다. 브라우저에서 http://127.
 Run → Run Configurations에서 왼쪽 **Spring Boot App 아래 실제 실행 항목**을 선택합니다. 유형 제목만 선택한 상태와 구분합니다. 없다면 Cl15botApplication.java 우클릭 → Run As → Spring Boot App을 한 번 실행한 뒤 다시 확인합니다. 오른쪽 탭의 Environment가 창 폭 때문에 가려졌는지도 확인합니다.
 Spring Boot App 항목이 없다면 Java Application → New → Project=cl15bot, Main class=com.example.cl15bot.Cl15botApplication으로 만들고 JRE를 Java 21로 선택해도 됩니다. Java Application 실행 설정은 Environment 탭을 제공합니다.
 
-탭 설정 대신 Git 제외된 `src/main/resources/application-local.yaml`에 네 값을 넣어도 됩니다. 기존 파일의 bot 부분만 교체하고 bot 키를 두 번 만들지 마세요.
+탭 설정 대신 Git 제외된 `src/main/resources/application-local.yaml`에 다섯 값을 넣어도 됩니다. 기존 파일의 bot 부분만 교체하고 bot 키를 두 번 만들지 마세요.
 
 ```yaml
 bot:
   mattermost-token: "실제 Mattermost 슬래시 명령 Token"
+  mattermost-allowed-channel-id: "by1prkd3yty7mybdssneo4uzpw"
   notion-token: "실제 StudyPool API 토큰"
   notion-data-source-id: "Study Log 데이터 원본 ID"
   notion-members-data-source-id: "Members 데이터 원본 ID"
@@ -68,14 +70,18 @@ Mattermost → Integrations → Slash Commands → 기존 study 명령 편집:
 
 ## 5. 실제 테스트 순서
 
-1. MM 채팅에서 `/study help` → 사용법 응답 확인.
+1. 채널 ID `by1prkd3yty7mybdssneo4uzpw`에서 `/study help` → 사용법 응답 확인.
 2. Notion Members의 기존 멤버 페이지 이름 확인 (추가 속성/ID 등록 없음).
-3. `/study 1 정명남 | MM 연결 테스트`에서 정명남을 실제 기존 멤버 이름으로 바꿉니다.
+3. `/study 2026-10-12 19:00 20:30 정명남 | MM 연결 테스트`에서 날짜·시각을 실제 과거 공부 시간으로, 정명남을 실제 기존 멤버 이름으로 바꿉니다.
 4. 명령 입력 → 저장 성공 응답 확인.
 5. 공용 Study Log에서 제목, 날짜, 이름 관계, 시작/종료 시간을 확인합니다. 해당 멤버 페이지의 필터 보기와 집계도 확인합니다.
 
 다른 사용자도 자신의 기존 Members 이름을 명령에 넣으면 됩니다. 개별 페이지 ID나 Mattermost 사용자 ID를 등록하지 않습니다. 이름과 공부 내용 사이의 `|`는 필수이며 공부 내용의 공백을 그대로 유지합니다.
-저장은 실제 공부 기록에 합산됩니다. 같은 명령을 다시 입력하면 새 행이 생기며, 시간 초과 시 먼저 Notion 저장 여부를 확인합니다. 종료 시간은 입력 시점, 시작 시간은 입력한 분만큼 이전, 날짜는 시작일입니다.
+저장은 실제 공부 기록에 합산됩니다. 같은 날은 `/study 2026-10-12 19:00 20:30 정명남 | Java 복습`을 사용합니다. 자정을 넘기면 `/study 2026-10-12 23:00 2026-10-13 01:00 정명남 | Java 복습`처럼 종료 날짜도 입력합니다. 같은 날에도 종료 날짜를 적을 수 있습니다. 종료 날짜 생략 시 시작일과 같은 날짜로만 처리합니다. 종료가 시작보다 빠르면 거절하고 다음 날로 자동 처리하지 않습니다. 종료 일시가 시작보다 늦고 현재보다 미래가 아니어야 하며, 공부 시간은 1~1440분입니다. 잘못된 날짜/시각과 분만 입력한 명령도 거절합니다. 실패 응답은 `⚠️`로 시작하고, 입력 누락·날짜/시각 형식 오류·존재하지 않는 날짜/시각에만 둘째 줄 예시를 표시합니다.
+
+같은 멤버의 기존 기록과 시간이 겹치면 내용과 관계없이 저장하지 않습니다. 같은 기록의 재입력, 부분 겹침, 포함 관계를 거절하며 끝점만 맞닿는 시간과 다른 멤버는 허용합니다. 자정을 넘긴 기록도 날짜를 포함해 비교합니다. 시간 초과 시 먼저 Notion 저장 여부를 확인합니다. 겹침 조회와 생성 사이에 동시에 들어온 요청은 중복을 완전히 막을 수 없습니다.
+
+STS Environment에 `MATTERMOST_ALLOWED_CHANNEL_ID=by1prkd3yty7mybdssneo4uzpw`를 필수로 설정합니다. 기본값이 없으므로 미설정·빈 값이면 모든 채널에서 실행을 거절합니다. 로컬 화면에서도 채널 ID를 동일하게 입력합니다. 시작 날짜·시작 시각·종료 시각과 선택 종료 날짜 입력란을 이용해 테스트할 수 있습니다. 자정을 넘기면 종료 날짜 입력란도 채웁니다. 다른 채널과 빈 채널은 Notion 조회 전에 거절합니다.
 
 ## 문제 확인
 

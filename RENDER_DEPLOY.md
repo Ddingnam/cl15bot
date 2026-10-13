@@ -2,15 +2,16 @@
 
 ## 1. 배포 전
 
-최신 프로젝트 파일을 GitHub Ddingnam/cl15bot의 master에 push합니다. 로컬 application-local.yaml이나 토큰을 커밋하지 않습니다. 필요한 값은 이미 받은 네 환경변수뿐입니다. 새 Notion 컬럼을 만들지 않습니다.
+최신 프로젝트 파일을 GitHub Ddingnam/cl15bot의 master에 push합니다. 로컬 application-local.yaml이나 토큰을 커밋하지 않습니다. 기존 네 환경변수와 허용 채널 ID를 설정합니다. 새 Notion 컬럼을 만들지 않습니다.
 
 ## 2. Render 생성
 
-아직 서비스를 만들지 않았다면 Render → **New → Blueprint** → GitHub 연결 → **Ddingnam/cl15bot** → Branch **master**를 선택합니다. `render.yaml`에서 cl15bot Web Service 설정을 읽습니다. **Free인지 확인**한 후 네 값의 입력 칸에 아래 값을 넣습니다.
+아직 서비스를 만들지 않았다면 Render → **New → Blueprint** → GitHub 연결 → **Ddingnam/cl15bot** → Branch **master**를 선택합니다. `render.yaml`에서 cl15bot Web Service 설정을 읽습니다. **Free인지 확인**한 후 다섯 값의 입력 칸에 아래 값을 넣습니다.
 
 | 변수 | 값 |
 |---|---|
 | MATTERMOST_SLASH_TOKEN | 기존 /study 슬래시 명령 Token |
+| MATTERMOST_ALLOWED_CHANNEL_ID | `by1prkd3yty7mybdssneo4uzpw` |
 | NOTION_TOKEN | StudyPool 연결 API 토큰 |
 | NOTION_DATA_SOURCE_ID | Study Log 데이터 원본 ID |
 | NOTION_MEMBERS_DATA_SOURCE_ID | Members 데이터 원본 ID |
@@ -31,7 +32,7 @@ Blueprint를 생성하여 배포합니다. `sync: false` 값은 최초 생성 �
 | Health Check Path | /actuator/health |
 | Auto-Deploy | On Commit |
 
-Build Command, Start Command, Docker Command는 별도로 덮어쓰지 않습니다. Dockerfile이 빌드와 실행을 정의합니다. 컨테이너는 prod 프로필로 실행합니다. 네 변수는 Render Environment에서 입력합니다. `NOTION_MEMBER_MAPPINGS`, `SPRING_PROFILES_ACTIVE=local`, 직접 지정한 `PORT`는 등록하지 않습니다. Notion에 저장하므로 Render Postgres나 디스크를 만들 필요가 없습니다.
+Build Command, Start Command, Docker Command는 별도로 덮어쓰지 않습니다. Dockerfile이 빌드와 실행을 정의합니다. 컨테이너는 prod 프로필로 실행합니다. 다섯 변수는 Render Environment에서 입력합니다. `NOTION_MEMBER_MAPPINGS`, `SPRING_PROFILES_ACTIVE=local`, 직접 지정한 `PORT`는 등록하지 않습니다. Notion에 저장하므로 Render Postgres나 디스크를 만들 필요가 없습니다.
 
 결제 수단 없이 Free로 테스트합니다. 월별 무료 인스턴스 시간/대역폭/빌드 한도에 도달하면 서비스나 빌드가 제한될 수 있습니다. 유료 플랜으로 자동 변경하는 설정은 없습니다.
 
@@ -53,22 +54,28 @@ Integrations → Slash Commands → 기존 study 명령 편집:
 Command Trigger Word: study
 Request Method: POST
 Request URL: https://실제서비스주소.onrender.com/api/mattermost/study
-Autocomplete Hint: <분> <Members 이름> | <공부 내용>
+Autocomplete Hint: <시작일 YYYY-MM-DD> <시작 HH:mm> [종료일 YYYY-MM-DD] <종료 HH:mm> <Members 이름> | <공부 내용>
 ```
 
 명령의 Token은 Render의 MATTERMOST_SLASH_TOKEN과 같아야 합니다. URL에 토큰을 붙이지 않습니다. 로컬 STS 서버나 외부 터널을 실행할 필요가 없습니다.
+
+자동완성 설명에는 `한국 시간으로 입력 · 자정을 넘기면 종료 날짜 필수 · /study help`를 넣습니다. 같은 날은 `/study YYYY-MM-DD HH:mm HH:mm 이름 | 내용`, 다른 날에 끝나면 `/study YYYY-MM-DD HH:mm YYYY-MM-DD HH:mm 이름 | 내용`을 사용합니다. 대괄호는 선택 항목 표시이며 실제 명령에 입력하지 않습니다. 종료 날짜를 생략하면 시작일과 같은 날짜로 처리합니다. 실패 응답은 `⚠️`로 시작하며, 입력 누락·날짜/시각 형식 오류·존재하지 않는 날짜/시각에만 둘째 줄 예시를 표시합니다. 그 밖의 실패는 이유와 사용자 행동만 표시합니다.
 
 ## 5. 실제 Notion 저장
 
 StudyPool 연결이 Study Log와 Members에 접근할 수 있는지 확인합니다. 콘텐츠 읽기와 삽입 권한이 필요합니다.
 
+Render → 해당 서비스 → Environment에서 `MATTERMOST_ALLOWED_CHANNEL_ID=by1prkd3yty7mybdssneo4uzpw`를 등록하고 재배포합니다. 이 환경변수에 지정한 공부 기록 채널에서 실행합니다. 코드에 기본값이 없으므로 미설정·빈 값이면 모든 채널에서 실행을 거절합니다. 채널을 변경하려면 환경변수 값만 바꿉니다. 다른 채널과 DM에서는 저장하지 않습니다.
+
 ```text
 /study help
-/study 1 정명남 | Render 연결 테스트
+/study 2026-10-12 19:00 20:30 정명남 | 시간 지정 테스트
 ```
 
 정명남을 기존 Members의 실제 페이지 이름으로 바꿉니다. 이름과 내용 사이 `|`를 포함합니다. 공용 Study Log에서 스터디/날짜/이름 관계/시작 시간/종료 시간과 멤버별 필터 보기 및 합계를 확인합니다. 이름이 없거나 중복이면 봇이 저장을 막습니다.
 이름을 직접 지정하는 방식이므로 요청자의 MM 계정과 멤버의 본인 여부를 대조하지 않습니다. 시험 기록도 실제 집계에 포함됩니다.
+
+예시는 종료 시각이 현재보다 과거일 때 사용합니다. 같은 멤버의 동일 명령, 다른 내용의 동일 시간, 일부 겹치는 시간은 겹침 안내가 나오고 행은 늘어나지 않아야 합니다. 끝점만 맞닿는 시간과 다른 멤버는 허용됩니다. 자정을 넘긴 기록은 `/study 2026-10-12 23:00 2026-10-13 01:00 정명남 | Java 복습`으로 테스트합니다. 종료 날짜 없이 `23:00 01:00`을 입력하면 거절되어야 합니다. 잘못된 날짜·시작보다 빠르거나 같은 종료 일시·1440분 초과·미래 종료·분만 입력한 명령과 다른 채널 요청도 거절되는지 확인합니다. 동시에 들어온 요청의 중복을 완전히 보장하지는 않습니다.
 
 ## 6. 이후 코드 변경
 
@@ -85,6 +92,9 @@ StudyPool 연결이 Study Log와 Members에 접근할 수 있는지 확인합니
 | 이름 없음/중복 | Members 기존 이름의 정확한 일치, 중복 행 |
 | Notion 400 | Study Log의 다섯 속성 이름·타입 |
 | Notion 401/403/404 | 토큰과 두 데이터 원본 ID, StudyPool의 두 데이터베이스 권한 |
+| 지정 채널 안내 | 현재 채널 ID와 MATTERMOST_ALLOWED_CHANNEL_ID 설정 |
+| 시간 겹침 안내 | 같은 멤버의 기존 Study Log 시작/종료 시간과 새 구간의 교집합 확인 |
+| 속성/겹침 조회 실패 | Notion preflight failure의 stage=study-schema 또는 stage=overlap-query와 연결·읽기 권한 (저장 요청 없음) |
 
 공식 문서: [Blueprint](https://render.com/docs/blueprint-spec), [Docker](https://render.com/docs/docker), [자동 배포](https://render.com/docs/deploys), [Free 제한](https://render.com/docs/free).
 ## Notion 통신 오류 로그 확인

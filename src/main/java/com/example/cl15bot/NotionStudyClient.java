@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 @Component
 public class NotionStudyClient {
@@ -19,7 +20,13 @@ public class NotionStudyClient {
     }
 
     public void save(StudyEntry entry, String memberPageId) {
-        Map<String, String> columns = studyColumns();
+        Map<String, String> columns;
+        try {
+            columns = studyColumns();
+        } catch (RestClientException ex) {
+            throw new StudyPreflightException("study-schema", ex);
+        }
+        rejectOverlap(entry, memberPageId, columns);
         Map<String, Object> fields = Map.of(
                 columns.get(properties.notionTitleProperty()), Map.of("title", richText(entry.subject())),
                 columns.get("날짜"), Map.of("date", Map.of("start", entry.date().toString())),
@@ -32,11 +39,48 @@ public class NotionStudyClient {
                 .retrieve().toBodilessEntity();
     }
 
+    private void rejectOverlap(StudyEntry entry, String memberPageId, Map<String, String> columns) {
+        MemberQuery result;
+        try {
+            result = client.post().uri("/data_sources/{id}/query", properties.notionDataSourceId())
+                    .body(Map.of("page_size", 1, "filter", Map.of("and", List.of(
+                            Map.of("property", columns.get("이름"), "relation", Map.of("contains", memberPageId)),
+                            Map.of("property", columns.get("시작 시간"), "date",
+                                    Map.of("before", entry.endTime().toOffsetDateTime().toString())),
+                            Map.of("property", columns.get("종료 시간"), "date",
+                                    Map.of("after", entry.startTime().toOffsetDateTime().toString()))))))
+                    .retrieve().body(MemberQuery.class);
+            if (result == null || result.results() == null) {
+                throw new RestClientException("Invalid Study Log overlap query response");
+            }
+        } catch (RestClientException ex) {
+            throw new StudyPreflightException("overlap-query", ex);
+        }
+        if (!result.results().isEmpty() || result.has_more()) {
+            throw new OverlappingStudyException();
+        }
+    }
+
+    public static class OverlappingStudyException extends RuntimeException {
+        public OverlappingStudyException() {
+            super("같은 멤버의 기존 기록과 공부 시간이 겹칩니다. 저장하지 않았습니다. Notion에서 기존 기록을 확인하고 겹치지 않는 시간으로 수정해주세요.");
+        }
+    }
+
+    public static class StudyPreflightException extends RuntimeException {
+        private final String stage;
+        public StudyPreflightException(String stage, RestClientException cause) {
+            super("Study Log preflight failed", cause);
+            this.stage = stage;
+        }
+        public String stage() { return stage; }
+    }
+
     private Map<String, String> studyColumns() {
         StudySchema schema = client.get().uri("/data_sources/{id}", properties.notionDataSourceId())
                 .retrieve().body(StudySchema.class);
         if (schema == null || schema.properties() == null) {
-            throw new StudySchemaException("Study Log 속성 정보를 확인하지 못했습니다. 저장 요청은 보내지 않았습니다.");
+            throw new StudySchemaException("Study Log 기록 항목을 확인하지 못해 저장 요청을 보내지 않았습니다. 관리자에게 Study Log 설정 확인을 요청해주세요.");
         }
         Map<String, String> resolved = new LinkedHashMap<>();
         Map<String, String> expected = Map.of(properties.notionTitleProperty(), "title",
@@ -47,7 +91,7 @@ public class NotionStudyClient {
             if (candidates.size() != 1 || candidates.getFirst().getValue() == null
                     || !column.getValue().equals(candidates.getFirst().getValue().type())) {
                 throw new StudySchemaException("Study Log의 '" + column.getKey()
-                        + "' 속성이 없거나 중복되거나 타입이 다릅니다. 저장 요청은 보내지 않았습니다.");
+                        + "' 기록 항목 설정이 올바르지 않아 저장 요청을 보내지 않았습니다. 관리자에게 해당 항목의 설정 확인을 요청해주세요.");
             }
             resolved.put(column.getKey(), candidates.getFirst().getKey());
         }

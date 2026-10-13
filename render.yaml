@@ -12,6 +12,8 @@ services:
     envVars:
       - key: MATTERMOST_SLASH_TOKEN
         sync: false
+      - key: MATTERMOST_ALLOWED_CHANNEL_ID
+        sync: false
       - key: NOTION_TOKEN
         sync: false
       - key: NOTION_DATA_SOURCE_ID

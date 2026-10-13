@@ -24,7 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
         "bot.mattermost-token=local-test-token",
         "bot.notion-token=fake-test-secret",
         "bot.notion-data-source-id=test-source",
-        "bot.notion-members-data-source-id=members-source"
+        "bot.notion-members-data-source-id=members-source",
+        "bot.mattermost-allowed-channel-id=test-study-channel"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
@@ -58,8 +59,8 @@ class LocalTestIntegrationTests {
     @Test
     void localFormUsesRealCommandFlowAndMemberRelation() throws Exception {
         mvc.perform(post("/api/mattermost/study").contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .param("token", "local-test-token").param("text", "1 홍길동 | 한글 로컬 테스트")
-                .param("user_id", "local-test").param("user_name", "테스트").param("channel_id", "local-test"))
+                .param("token", "local-test-token").param("text", "2026-10-12 19:00 19:01 홍길동 | 한글 로컬 테스트")
+                .param("user_id", "local-test").param("user_name", "테스트").param("channel_id", "test-study-channel"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장했습니다")));
         ArgumentCaptor<StudyEntry> entry = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).save(entry.capture(), eq("00000000-0000-0000-0000-000000000001"));
