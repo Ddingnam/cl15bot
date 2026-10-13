@@ -81,6 +81,10 @@ Java 21 · Spring Boot 4.1.1 · Gradle 기반 Mattermost → Notion 공부 기�
 
 ## 실행·배포
 
+직접 만든 Discord 봇으로 모든 일반 음성방의 체류 시간을 `모각코`로 자동 기록합니다. 토큰·서버 ID·사용자 매핑 설정은 [Discord 설정 안내](DISCORD_SETUP.md)를 참고합니다. 봇 토큰이 비어 있으면 기존 Mattermost만 실행됩니다. Discord는 3분 이상, 2026년 내 최대 24시간 구간을 시작일 기준 한 행으로 저장하고 개인 DM을 보냅니다. 1차 테스트는 메모리 상태만 사용하므로 앱 재시작 때 진행 중 기록은 유실됩니다.
+
+Discord 수동 기록은 서버에 자동 등록되는 `/st`의 `입력` 옵션에 MM과 같은 내용을 넣습니다. 예: `/st 입력:1013 1900 2030 Java 복습`. `도움말`·`내정보`도 같은 입력란에 넣으며, 입력 생략은 도움말입니다. 수동 기록은 MM처럼 1~1440분을 허용하고 파서·겹침 검사·저장 기능을 공유합니다. 모든 응답은 실행자에게만 표시하며 수동 결과는 DM 대신 해당 비공개 응답에 표시됩니다.
+
 [로컬 안내](LOCAL_TEST.md), [Render 안내](RENDER_DEPLOY.md), [Discord 인수인계](DISCORD_HANDOFF.md)를 참고합니다. MM 설정에서 Trigger Word를 **st**로 직접 변경합니다. Request Method POST와 URL `/api/mattermost/study`는 유지합니다. 이 저장소의 수정만으로 MM 설정이 바뀌지는 않습니다.
 
 Mattermost의 표준 커스텀 슬래시 명령어는 영문·숫자와 일부 기호만 허용하므로 한글 이름 대신 사용자가 선택한 `/st`를 사용합니다. 도움말·내정보 같은 명령어 인자는 한글을 사용할 수 있습니다. [공식 Trigger 검증 코드](https://github.com/mattermost/mattermost/blob/master/server/public/model/command.go)

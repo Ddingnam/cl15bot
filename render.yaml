@@ -20,3 +20,9 @@ services:
         sync: false
       - key: NOTION_MEMBERS_DATA_SOURCE_ID
         sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_MEMBER_MAPPINGS
+        sync: false

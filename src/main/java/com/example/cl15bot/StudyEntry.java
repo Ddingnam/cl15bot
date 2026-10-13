@@ -26,8 +26,25 @@ public record StudyEntry(int minutes, String subject, String memberName, String 
     public ZonedDateTime startTime() { return endTime.minusMinutes(minutes); }
     public LocalDate date() { return startTime().toLocalDate(); }
 
+    public enum Platform {
+        MATTERMOST("Mattermost", "MM"), DISCORD("Discord", "Discord");
+        final String name;
+        final String account;
+        Platform(String name, String account) { this.name = name; this.account = account; }
+    }
+
+    public static String help(Platform platform) {
+        return platform == Platform.MATTERMOST ? HELP
+                : HELP.replace("MM 계정", "Discord 계정").replace("/st ", "/st 입력:");
+    }
+
     public static StudyEntry parse(String text, String memberName, String userId, String userName,
             String channelId, ZonedDateTime now) {
+        return parse(text, memberName, userId, userName, channelId, now, Platform.MATTERMOST);
+    }
+
+    public static StudyEntry parse(String text, String memberName, String userId, String userName,
+            String channelId, ZonedDateTime now, Platform platform) {
         if (text == null || text.length() > 2000) throw invalid("입력은 2000자 이내로 작성해주세요.");
         if (text.codePoints().anyMatch(c -> Character.isISOControl(c) && !Character.isWhitespace(c))) {
             throw invalid("입력에 제어 문자를 사용할 수 없습니다. 제어 문자를 제거한 뒤 다시 입력해주세요.");
@@ -66,10 +83,12 @@ public record StudyEntry(int minutes, String subject, String memberName, String 
         if (userId == null || userId.isBlank() || userName == null || userName.isBlank()
                 || userId.length() > 200 || userName.length() > 200
                 || channelId == null || channelId.isBlank() || channelId.length() > 200) {
-            throw invalid("Mattermost 사용자 또는 채널 정보를 확인하지 못했습니다. Mattermost에서 다시 실행하고, 계속 실패하면 관리자에게 문의해주세요.");
+            throw invalid(platform.name + " 사용자 또는 채널 정보를 확인하지 못했습니다. " + platform.name + "에서 다시 실행하고, 계속 실패하면 관리자에게 문의해주세요.");
         }
         if (memberName == null || memberName.isBlank()) {
-            throw invalid("MM 계정에 연결된 Members 이름이 없습니다. /st 내정보로 사용자 ID를 확인하고 관리자에게 계정 연결을 요청해주세요.");
+            throw invalid(platform.account + " 계정에 연결된 Members 이름이 없습니다. "
+                    + (platform == Platform.DISCORD ? "/st 입력:내정보" : "/st 내정보")
+                    + "로 사용자 ID를 확인하고 관리자에게 계정 연결을 요청해주세요.");
         }
         if (memberName.length() > 200) throw invalid("연결된 Members 이름이 너무 깁니다. 관리자에게 계정 연결 설정 확인을 요청해주세요.");
         return new StudyEntry((int) minutes, subject.strip(), memberName.strip(), userId, userName, channelId, end);
