@@ -21,9 +21,9 @@ public class BotConfiguration {
     }
 
     static RestClient.Builder notionClientBuilder(BotProperties properties) {
-        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
-        factory.setReadTimeout(Duration.ofSeconds(3));
+        factory.setReadTimeout(Duration.ofSeconds(8));
         return RestClient.builder().requestFactory(factory)
                 .baseUrl("https://api.notion.com/v1")
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.notionToken())

@@ -111,6 +111,17 @@ class StudyCommandControllerTests {
     }
 
     @Test
+    void memberLookupTimeoutDoesNotSendSaveAndReportsLookupStage() throws Exception {
+        when(members.pageIdFor("홍길동")).thenThrow(new ResourceAccessException("private connection details",
+                new java.net.http.HttpConnectTimeoutException("private connection details")));
+        mvc.perform(command("60 홍길동 | Java")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("Members 조회 중")))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장 요청은 보내지 않았습니다")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private connection details"))));
+        verifyNoInteractions(notion);
+    }
+
+    @Test
     void unknownUserCannotWriteToAnotherMembersPage() throws Exception {
         when(members.pageIdFor("홍길동")).thenReturn(java.util.Optional.empty());
         mvc = controller(new BotProperties("slash-secret", "notion-secret", "source-id", "스터디",

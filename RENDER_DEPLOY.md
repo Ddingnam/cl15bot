@@ -87,3 +87,6 @@ StudyPool 연결이 Study Log와 Members에 접근할 수 있는지 확인합니
 | Notion 401/403/404 | 토큰과 두 데이터 원본 ID, StudyPool의 두 데이터베이스 권한 |
 
 공식 문서: [Blueprint](https://render.com/docs/blueprint-spec), [Docker](https://render.com/docs/docker), [자동 배포](https://render.com/docs/deploys), [Free 제한](https://render.com/docs/free).
+## Notion 통신 오류 로그 확인
+
+Render의 서비스 Logs에서 Notion network failure를 검색합니다. 이 오류는 앱이 처리하므로 배포 상태가 Failed로 바뀌지 않으며 WARN 수준으로 표시됩니다. stage=members-query는 Members 조회 중 실패하여 저장 요청을 보내지 않은 경우이고, stage=study-save는 기록 저장 중 실패한 경우입니다. causes의 HttpConnectTimeoutException은 연결 제한, HttpTimeoutException은 요청 제한, SSLException은 TLS, UnknownHostException은 DNS 문제를 조사할 단서입니다. 실제 토큰이나 Notion 응답 본문은 기록하지 않습니다.
