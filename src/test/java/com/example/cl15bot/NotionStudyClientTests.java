@@ -100,7 +100,7 @@ class NotionStudyClientTests {
             assertThrows(NotionStudyClient.OverlappingStudyException.class, () -> client.save(entry, "member-id"));
         } else {
             server.expect(requestTo("https://api.notion.com/v1/pages"))
-                    .andRespond(withSuccess("{\"id\":\"new\"}", MediaType.APPLICATION_JSON));
+                    .andRespond(withSuccess("{\"id\":\"new\",\"url\":\"https://www.notion.so/new\"}", MediaType.APPLICATION_JSON));
             client.save(entry, "member-id");
         }
         server.verify();
@@ -144,7 +144,7 @@ class NotionStudyClientTests {
                 .andExpect(jsonPath("$.properties.length()").value(5))
                 .andExpect(jsonPath("$.properties['총 공부 시간']").doesNotExist())
                 .andExpect(jsonPath("$.properties['시즌 학습 시간 (분)']").doesNotExist())
-                .andRespond(withSuccess("{\"id\":\"page-123\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"id\":\"page-123\",\"url\":\"https://www.notion.so/page-123\"}", MediaType.APPLICATION_JSON));
         client.save(entry(), "00000000-0000-0000-0000-000000000001");
         server.verify();
     }

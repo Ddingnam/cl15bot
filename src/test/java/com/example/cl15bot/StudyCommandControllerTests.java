@@ -13,7 +13,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,18 +36,22 @@ class StudyCommandControllerTests {
     @BeforeEach
     void setUp() {
         when(members.pageIdFor("홍길동")).thenReturn(java.util.Optional.of(MEMBER_PAGE));
-        mvc = controller(new BotProperties("slash-secret", "notion-secret", "source-id", "스터디", "members-source", TEST_CHANNEL_ID));
+        mvc = controller(new BotProperties("slash-secret", "notion-secret", "source-id", "스터디", "members-source"));
     }
 
     private MockMvc controller(BotProperties properties) {
         return MockMvcBuilders.standaloneSetup(new StudyCommandController(properties, notion, clock,
-                members)).build();
+                members, mock(MattermostResponseSender.class), Runnable::run)).build();
     }
 
     private MockHttpServletRequestBuilder command(String text) {
+        return command(text, TEST_CHANNEL_ID);
+    }
+
+    private MockHttpServletRequestBuilder command(String text, String channel) {
         return post("/api/mattermost/study").contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("token", "slash-secret").param("text", text)
-                .param("user_id", "user-123").param("user_name", "mm-login-name").param("channel_id", TEST_CHANNEL_ID);
+                .param("user_id", "user-123").param("user_name", "mm-login-name").param("channel_id", channel);
     }
 
     @Test
@@ -74,33 +77,20 @@ class StudyCommandControllerTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "another-channel", "by1prkd3yty7mybdssneo4uzpx"})
-    void rejectsOtherOrMissingChannelsBeforeAnyNotionAccess(String channel) throws Exception {
-        mvc.perform(post("/api/mattermost/study").contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .param("token", "slash-secret").param("text", "60 홍길동 | Java")
-                .param("user_id", "u1").param("user_name", "사용자").param("channel_id", channel))
+    @ValueSource(strings = {"test-study-channel", "another-channel", "direct-message-channel", "group-message-channel"})
+    void acceptsStudyInAnyChannelWithoutChannelConfiguration(String channel) throws Exception {
+        mvc.perform(command("2026-10-12 00:00 01:00 홍길동 | Java", channel))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("지정된 공부 기록 채널")));
-        verifyNoInteractions(notion, members);
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("저장했습니다")));
+        ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(notion).save(saved.capture(), eq(MEMBER_PAGE));
+        assertEquals(channel, saved.getValue().channelId());
     }
 
     @Test
-    void acceptsConfiguredChannelOverride() throws Exception {
-        mvc = controller(new BotProperties("slash-secret", "", "", "스터디", "", "channel-override"));
-        mvc.perform(post("/api/mattermost/study").contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .param("token", "slash-secret").param("channel_id", "channel-override").param("text", "help"))
-                .andExpect(jsonPath("$.text").value(StudyEntry.HELP));
-        verifyNoInteractions(notion, members);
-    }
-
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" "})
-    void missingAllowedChannelConfigurationBlocksAllRequests(String configuredChannel) throws Exception {
-        mvc = controller(new BotProperties("slash-secret", "notion-secret", "source-id", "스터디",
-                "members-source", configuredChannel));
-        mvc.perform(command("help"))
-                .andExpect(jsonPath("$.text").value("⚠️ 허용 채널 설정이 완료되지 않아 사용할 수 없습니다. 관리자에게 허용 채널 설정 확인을 요청해주세요."));
+    void missingChannelMetadataIsStillRejectedBeforeNotionAccess() throws Exception {
+        mvc.perform(command("2026-10-12 00:00 01:00 홍길동 | Java", ""))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("사용자 또는 채널 정보")));
         verifyNoInteractions(notion, members);
     }
 
@@ -155,14 +145,14 @@ class StudyCommandControllerTests {
 
     @Test
     void requiresConfiguredToken() throws Exception {
-        mvc = controller(new BotProperties("", "", "", "스터디", "", TEST_CHANNEL_ID));
+        mvc = controller(new BotProperties("", "", "", "스터디", ""));
         mvc.perform(command("2026-10-12 00:00 01:00 홍길동 | Java")).andExpect(status().isServiceUnavailable());
         verifyNoInteractions(notion);
     }
 
     @Test
     void missingNotionConfigurationDoesNotWrite() throws Exception {
-        mvc = controller(new BotProperties("slash-secret", "", "", "스터디", "", TEST_CHANNEL_ID));
+        mvc = controller(new BotProperties("slash-secret", "", "", "스터디", ""));
         mvc.perform(command("2026-10-12 00:00 01:00 홍길동 | Java")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("관리자에게 Notion 연결 설정 확인을 요청해주세요")));
         verifyNoInteractions(notion);
@@ -199,7 +189,7 @@ class StudyCommandControllerTests {
     void unknownUserCannotWriteToAnotherMembersPage() throws Exception {
         when(members.pageIdFor("홍길동")).thenReturn(java.util.Optional.empty());
         mvc = controller(new BotProperties("slash-secret", "notion-secret", "source-id", "스터디",
-                "members-source", TEST_CHANNEL_ID));
+                "members-source"));
         mvc.perform(command("2026-10-12 00:00 01:00 홍길동 | Java")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value(StudyEntry.inputError("Members에서 해당 이름을 찾지 못했습니다. Notion Members의 이름을 확인한 뒤 같은 이름으로 다시 입력해주세요.")));
         verifyNoInteractions(notion);
@@ -224,7 +214,7 @@ class StudyCommandControllerTests {
 
     @Test
     void whoamiWorksBeforeNotionIsConfiguredWithoutWriting() throws Exception {
-        mvc = controller(new BotProperties("slash-secret", "", "", "스터디", "", TEST_CHANNEL_ID));
+        mvc = controller(new BotProperties("slash-secret", "", "", "스터디", ""));
         mvc.perform(command("whoami")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("user-123")));
         verifyNoInteractions(notion);

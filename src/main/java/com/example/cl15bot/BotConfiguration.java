@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.time.Duration;
 import java.net.http.HttpClient;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,5 +39,17 @@ public class BotConfiguration {
     @Bean
     Clock studyClock() {
         return Clock.system(ZoneId.of("Asia/Seoul"));
+    }
+
+    @Bean("studyExecutor")
+    ThreadPoolTaskExecutor studyExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("study-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        return executor;
     }
 }

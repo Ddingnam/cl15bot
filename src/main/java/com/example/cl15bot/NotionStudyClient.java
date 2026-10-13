@@ -4,6 +4,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.LinkedHashMap;
+import java.net.URI;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -19,7 +26,7 @@ public class NotionStudyClient {
         this.client = notionRestClient;
     }
 
-    public void save(StudyEntry entry, String memberPageId) {
+    public String save(StudyEntry entry, String memberPageId) {
         Map<String, String> columns;
         try {
             columns = studyColumns();
@@ -33,14 +40,18 @@ public class NotionStudyClient {
                 columns.get("이름"), Map.of("relation", List.of(Map.of("id", memberPageId))),
                 columns.get("시작 시간"), Map.of("date", Map.of("start", entry.startTime().toOffsetDateTime().toString())),
                 columns.get("종료 시간"), Map.of("date", Map.of("start", entry.endTime().toOffsetDateTime().toString())));
-        client.post().uri("/pages")
+        StudyPage saved = client.post().uri("/pages")
                 .body(Map.of("parent", Map.of("type", "data_source_id",
                         "data_source_id", properties.notionDataSourceId()), "properties", fields))
-                .retrieve().toBodilessEntity();
+                .retrieve().body(StudyPage.class);
+        if (saved == null) throw new RestClientException("Missing created Study Log page response");
+        String url = pageLink(saved.id(), saved.url());
+        if (url.isEmpty()) throw new RestClientException("Missing created Study Log page identity");
+        return url;
     }
 
     private void rejectOverlap(StudyEntry entry, String memberPageId, Map<String, String> columns) {
-        MemberQuery result;
+        StudyQuery result;
         try {
             result = client.post().uri("/data_sources/{id}/query", properties.notionDataSourceId())
                     .body(Map.of("page_size", 1, "filter", Map.of("and", List.of(
@@ -49,7 +60,7 @@ public class NotionStudyClient {
                                     Map.of("before", entry.endTime().toOffsetDateTime().toString())),
                             Map.of("property", columns.get("종료 시간"), "date",
                                     Map.of("after", entry.startTime().toOffsetDateTime().toString()))))))
-                    .retrieve().body(MemberQuery.class);
+                    .retrieve().body(StudyQuery.class);
             if (result == null || result.results() == null) {
                 throw new RestClientException("Invalid Study Log overlap query response");
             }
@@ -57,7 +68,8 @@ public class NotionStudyClient {
             throw new StudyPreflightException("overlap-query", ex);
         }
         if (!result.results().isEmpty() || result.has_more()) {
-            throw new OverlappingStudyException();
+            throw result.results().isEmpty() ? new OverlappingStudyException()
+                    : new OverlappingStudyException(overlapDescription(result.results().getFirst(), columns));
         }
     }
 
@@ -65,6 +77,65 @@ public class NotionStudyClient {
         public OverlappingStudyException() {
             super("같은 멤버의 기존 기록과 공부 시간이 겹칩니다. 저장하지 않았습니다. Notion에서 기존 기록을 확인하고 겹치지 않는 시간으로 수정해주세요.");
         }
+        public OverlappingStudyException(String details) {
+            super("같은 멤버의 기존 기록과 공부 시간이 겹칩니다. 저장하지 않았습니다.\n"
+                    + details + "기존 기록을 확인하고 겹치지 않는 시간으로 수정해주세요.");
+        }
+    }
+
+    public record StudyQuery(List<StudyPage> results, boolean has_more) { }
+    public record StudyPage(String id, String url, Map<String, DateProperty> properties) { }
+    public record DateProperty(DateValue date) { }
+    public record DateValue(String start, String time_zone) { }
+
+    private static String overlapDescription(StudyPage page, Map<String, String> columns) {
+        String details = "";
+        if (page != null && page.properties() != null) {
+            try {
+                ZonedDateTime start = propertyTime(page.properties().get(columns.get("시작 시간")));
+                ZonedDateTime end = propertyTime(page.properties().get(columns.get("종료 시간")));
+                details = "🕒 기존 기록 : " + period(start, end) + "\n";
+            } catch (RuntimeException ignored) {
+                // A matching row still blocks saving even if its display fields are incomplete.
+            }
+        }
+        String url = page == null ? "" : pageLink(page.id(), page.url());
+        return details + (url.isEmpty() ? "" : "🔗 [기존 기록 확인](<" + url + ">)\n");
+    }
+
+    private static ZonedDateTime propertyTime(DateProperty property) {
+        DateValue date = property.date();
+        ZoneId korea = ZoneId.of("Asia/Seoul");
+        try {
+            return OffsetDateTime.parse(date.start()).atZoneSameInstant(korea);
+        } catch (DateTimeParseException ex) {
+            return LocalDateTime.parse(date.start()).atZone(date.time_zone() == null
+                    ? ZoneId.of("UTC") : ZoneId.of(date.time_zone())).withZoneSameInstant(korea);
+        }
+    }
+
+    static String period(ZonedDateTime start, ZonedDateTime end) {
+        DateTimeFormatter full = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        return start.format(full) + " ~ " + end.format(start.toLocalDate().equals(end.toLocalDate())
+                ? DateTimeFormatter.ofPattern("HH:mm") : full);
+    }
+
+    static String pageLink(String id, String url) {
+        if (url != null) {
+            try {
+                URI uri = URI.create(url);
+                String host = uri.getHost();
+                if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getUserInfo() == null && host != null
+                        && (host.equals("notion.so") || host.endsWith(".notion.so")
+                                || host.equals("notion.site") || host.endsWith(".notion.site"))) {
+                    return uri.toASCIIString();
+                }
+            } catch (IllegalArgumentException ignored) { }
+        }
+        if (id != null && id.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32}")) {
+            return "https://www.notion.so/" + id.replace("-", "");
+        }
+        return "";
     }
 
     public static class StudyPreflightException extends RuntimeException {
