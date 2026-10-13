@@ -52,6 +52,8 @@ public class DiscordStudyCommands extends ListenerAdapter {
 
     @Override public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
         if (!event.getName().equals("st")) return;
+        log.info("Discord /st received; targetGuild={} acknowledged={}",
+                event.getGuild() != null && event.getGuild().getId().equals(properties.guildId()), event.isAcknowledged());
         if (event.getGuild() == null || !event.getGuild().getId().equals(properties.guildId())) {
             reply(event, "⚠️ 이 명령어는 지정된 Discord 서버에서만 사용할 수 있습니다.");
             return;

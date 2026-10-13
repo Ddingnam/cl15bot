@@ -151,6 +151,7 @@ public class DiscordBot extends ListenerAdapter {
     }
 
     @Override public void onStatusChange(StatusChangeEvent event) {
+        log.info("Discord connection status: {} -> {}", event.getOldStatus(), event.getNewStatus());
         if (event.getOldStatus() == JDA.Status.CONNECTED && event.getNewStatus() != JDA.Status.CONNECTED) {
             sessions.disconnected();
             log.warn("Discord connection interrupted; sessions closed at last confirmed time");
