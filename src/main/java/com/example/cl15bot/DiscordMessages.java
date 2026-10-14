@@ -13,6 +13,22 @@ final class DiscordMessages {
     private static final String OMITTED = "…(일부 생략)";
     private static final Pattern RECORD_LINK = Pattern.compile("(?m)^🔗 \\[([^\\]]+)\\]\\(<(https://[^>]+)>\\)\\s*$");
 
+    static MessageEmbed help() {
+        return new EmbedBuilder().setColor(0x5865F2).setTitle("공부 기록 사용법")
+                .setDescription("`/st` 선택 → `입력` 옵션 선택 → 내용 입력\n\n"
+                        + "아래 예시의 내용만 입력해주세요. `입력:`은 직접 적지 않습니다.")
+                .addField("같은 날", "`" + StudyEntry.EXAMPLE.replace("예: /st ", "") + "`\n"
+                        + "날짜 · 시작 시각 · 종료 시각 · 공부 내용", false)
+                .addField("자정을 넘긴 경우", "`" + StudyEntry.CROSS_DAY_EXAMPLE.replace("예: /st ", "") + "`\n"
+                        + "시작 날짜 · 시작 시각 · 종료 날짜 · 종료 시각 · 공부 내용", false)
+                .addField("계정 확인", "입력란에 `내정보`를 입력해주세요.", false)
+                .addField("입력 기준", "• 날짜: MMDD / 시각: HHmm\n"
+                        + "• " + StudyEntry.YEAR + "년 · 한국 시간 기준\n"
+                        + "• 공부 시간: 1분~24시간, 미래 시각은 입력할 수 없습니다.\n"
+                        + "• 공부 내용은 문자로 시작해주세요.", false)
+                .setFooter("본인에게만 표시됩니다").build();
+    }
+
     static MessageEmbed account(String userId, String memberName) {
         var card = new EmbedBuilder().setColor(0x5865F2).setTitle("👤 내 정보")
                 .setDescription("공부 기록에 사용할 계정 정보입니다.")

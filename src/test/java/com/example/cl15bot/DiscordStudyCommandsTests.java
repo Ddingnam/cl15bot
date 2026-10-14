@@ -93,15 +93,20 @@ class DiscordStudyCommandsTests {
 
     @Test void helpAndInfoArePrivateAndDoNotStore() {
         commands.onSlashCommandInteraction(event); // no input -> help
-        verify(event).reply(contains("/st 입력:"));
         input("내정보");
         commands.onSlashCommandInteraction(event);
         var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
-        verify(event).replyEmbeds(card.capture());
-        assertEquals("👤 내 정보", card.getValue().getTitle());
-        assertEquals("`" + ID + "`", card.getValue().getFields().get(0).getValue());
-        assertEquals("정명남", card.getValue().getFields().get(1).getValue());
-        assertEquals(2, card.getValue().getFields().size());
+        verify(event, times(2)).replyEmbeds(card.capture());
+        var help = card.getAllValues().get(0);
+        var info = card.getAllValues().get(1);
+        assertEquals("공부 기록 사용법", help.getTitle());
+        assertTrue(help.getDescription().contains("`입력:`은 직접 적지 않습니다"));
+        assertTrue(help.getFields().get(0).getValue().startsWith("`1013 1900 2030 Java 복습`"));
+        assertTrue(help.getFields().get(1).getValue().startsWith("`1013 2300 1014 0100 Java 복습`"));
+        assertEquals("👤 내 정보", info.getTitle());
+        assertEquals("`" + ID + "`", info.getFields().get(0).getValue());
+        assertEquals("정명남", info.getFields().get(1).getValue());
+        assertEquals(2, info.getFields().size());
         verify(reply, times(2)).setEphemeral(true);
         verifyNoInteractions(recording);
         assertTrue(tasks.isEmpty());

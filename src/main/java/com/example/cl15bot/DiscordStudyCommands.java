@@ -80,7 +80,9 @@ public class DiscordStudyCommands extends ListenerAdapter {
         String input = text.strip();
         String userId = event.getUser().getId();
         if (input.isBlank() || input.equals("도움말") || input.equalsIgnoreCase("help")) {
-            reply(event, StudyEntry.help(StudyEntry.Platform.DISCORD));
+            event.replyEmbeds(DiscordMessages.help()).setEphemeral(true).setAllowedMentions(List.of())
+                    .queue(ignored -> {}, failure -> log.warn("Discord help reply failed: type={}",
+                            failure.getClass().getSimpleName()));
             return;
         }
         if (input.equals("내정보") || input.equalsIgnoreCase("whoami")) {
