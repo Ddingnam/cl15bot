@@ -27,6 +27,7 @@ public class DiscordStudySessions {
     private final Map<String, Session> active = new HashMap<>();
     private final Set<String> notified = new HashSet<>();
     private boolean connected;
+    private boolean stopping;
     private Instant lastConfirmed;
 
     record Session(String userId, String username, String channelId, String name, Instant start) { }
@@ -42,7 +43,7 @@ public class DiscordStudySessions {
     }
 
     public synchronized void ready(Iterable<Occupant> occupants) {
-        if (connected) return;
+        if (connected || stopping) return;
         connected = true;
         lastConfirmed = clock.instant();
         // Replayed events during a reconnect are ignored until the current cache is ready.
@@ -80,6 +81,11 @@ public class DiscordStudySessions {
         var ended = java.util.List.copyOf(active.values());
         active.clear();
         for (Session session : ended) finish(session, lastConfirmed);
+    }
+
+    public synchronized void stop() {
+        stopping = true;
+        disconnected();
     }
 
     private void finish(Session session, Instant end) {

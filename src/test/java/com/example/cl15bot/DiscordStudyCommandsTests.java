@@ -35,13 +35,15 @@ class DiscordStudyCommandsTests {
     private final Guild guild = mock(Guild.class);
     private final User user = mock(User.class);
     private final List<Runnable> tasks = new ArrayList<>();
+    private final java.util.function.BiConsumer<String, String> dm = mock(java.util.function.BiConsumer.class);
     private DiscordStudyCommands commands;
 
     @BeforeEach void setup() {
         commands = new DiscordStudyCommands(new DiscordProperties("", GUILD, ""),
                 new BotProperties("mm", "notion", "study", "스터디", "members"),
                 new DiscordMemberMapping("{\"" + ID + "\":\"정명남\"}"), recording,
-                Clock.fixed(Instant.parse("2026-10-13T14:00:00Z"), ZoneId.of("Asia/Seoul")), tasks::add);
+                Clock.fixed(Instant.parse("2026-10-13T14:00:00Z"), ZoneId.of("Asia/Seoul")), tasks::add,
+                dm, new DiscordTasks());
         when(event.getName()).thenReturn("st");
         when(event.getGuild()).thenReturn(guild);
         when(guild.getId()).thenReturn(GUILD);
@@ -50,13 +52,15 @@ class DiscordStudyCommandsTests {
         when(user.getName()).thenReturn("jmn");
         when(event.getChannelId()).thenReturn("text-channel");
         when(event.reply(anyString())).thenReturn(reply);
+        when(event.replyEmbeds(any(net.dv8tion.jda.api.entities.MessageEmbed.class))).thenReturn(reply);
         when(hook.editOriginal(anyString())).thenReturn(edit);
+        when(hook.editOriginalEmbeds(any(net.dv8tion.jda.api.entities.MessageEmbed.class))).thenReturn(edit);
         doAnswer(invocation -> {
             Consumer<InteractionHook> success = invocation.getArgument(0);
             success.accept(hook);
             return null;
         }).when(reply).queue(any(), any());
-        when(recording.process(any())).thenReturn(ResponseEntity.ok(
+        when(recording.processDiscord(any(), any(), any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "✅ 저장했습니다.")));
     }
 
@@ -75,12 +79,15 @@ class DiscordStudyCommandsTests {
         assertEquals(1, tasks.size());
         tasks.getFirst().run();
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording).process(entry.capture());
+        verify(recording).processDiscord(entry.capture(), any(), any());
         assertEquals(1, entry.getValue().minutes());
         assertEquals("정명남", entry.getValue().memberName());
         assertEquals("Java 복습", entry.getValue().subject());
         assertEquals(ID, entry.getValue().userId());
-        verify(hook).editOriginal("✅ 저장했습니다.");
+        var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
+        verify(hook).editOriginalEmbeds(card.capture());
+        assertEquals("공부 기록 완료", card.getValue().getTitle());
+        assertEquals("저장했습니다.", card.getValue().getDescription());
         verify(event, never()).getChannel();
     }
 
@@ -152,15 +159,16 @@ class DiscordStudyCommandsTests {
 
     @Test void crossMidnightAndOverlapUseCommonRecordingService() {
         input("1012 2300 1013 0100 Java 복습");
-        when(recording.process(any())).thenReturn(ResponseEntity.ok(
+        when(recording.processDiscord(any(), any(), any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "⚠️ 같은 멤버의 기존 기록과 공부 시간이 겹칩니다.")));
         commands.onSlashCommandInteraction(event);
         tasks.getFirst().run();
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording).process(entry.capture());
+        verify(recording).processDiscord(entry.capture(), any(), any());
         assertEquals(120, entry.getValue().minutes());
         assertEquals(12, entry.getValue().date().getDayOfMonth());
         verify(hook).editOriginal(contains("겹칩니다"));
+        verify(edit).setEmbeds(List.of());
         verify(reply).setEphemeral(true);
     }
 
@@ -183,5 +191,41 @@ class DiscordStudyCommandsTests {
         failure.getValue().accept(new IllegalStateException());
         commands.register(guild);
         verify(guild, times(2)).upsertCommand(any(CommandData.class));
+    }
+
+    @Test void failedResultEditFallsBackToDmWithoutSavingAgain() {
+        input("1013 1900 2000 Java");
+        doAnswer(invocation -> {
+            Consumer<Throwable> failure = invocation.getArgument(1);
+            failure.accept(new IllegalStateException("expired interaction"));
+            return null;
+        }).when(edit).queue(any(), any());
+        commands.onSlashCommandInteraction(event);
+        tasks.getFirst().run();
+        verify(recording, times(1)).processDiscord(any(), any(), any());
+        verify(dm).accept(ID, "✅ 저장했습니다.");
+    }
+
+    @Test void synchronousEditFailureAlsoFallsBackToDm() {
+        input("1013 1900 2000 Java");
+        when(hook.editOriginalEmbeds(any(net.dv8tion.jda.api.entities.MessageEmbed.class))).thenThrow(new IllegalStateException());
+        commands.onSlashCommandInteraction(event);
+        tasks.getFirst().run();
+        verify(recording, times(1)).processDiscord(any(), any(), any());
+        verify(dm).accept(ID, "✅ 저장했습니다.");
+    }
+
+    @Test void acknowledgmentArrivingDuringShutdownDoesNotStartSave() {
+        input("1013 1900 2000 Java");
+        doAnswer(invocation -> {
+            commands.stopAccepting();
+            Consumer<InteractionHook> success = invocation.getArgument(0);
+            success.accept(hook);
+            return null;
+        }).when(reply).queue(any(), any());
+        commands.onSlashCommandInteraction(event);
+        assertTrue(tasks.isEmpty());
+        verifyNoInteractions(recording);
+        verify(hook).editOriginal(contains("저장 요청을 보내지 않았습니다"));
     }
 }

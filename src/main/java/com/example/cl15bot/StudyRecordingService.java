@@ -41,12 +41,29 @@ public class StudyRecordingService {
         return process(entry, true);
     }
 
+    public ResponseEntity<CommandResponse> processDiscord(StudyEntry entry, java.time.Instant receivedAt,
+            java.time.Clock clock) {
+        return process(entry, true, () -> {
+            if (!clock.instant().isBefore(receivedAt.plus(java.time.Duration.ofMinutes(10)))) {
+                throw new MattermostRequestDeadline.ExpiredException();
+            }
+        });
+    }
+
     private ResponseEntity<CommandResponse> process(StudyEntry entry, boolean linkToStudyLog) {
+        return process(entry, linkToStudyLog, () -> {});
+    }
+
+    private ResponseEntity<CommandResponse> process(StudyEntry entry, boolean linkToStudyLog, Runnable beforeStart) {
         if (!properties.hasNotionConfiguration()) {
             return ResponseEntity.ok(failureReply("Notion 연결 설정이 완료되지 않아 저장할 수 없습니다. 관리자에게 설정 확인을 요청해주세요."));
         }
         // Fixed stripes bound memory and serialize preflight + creation across both platforms.
         synchronized (memberLocks[Math.floorMod(entry.memberName().hashCode(), memberLocks.length)]) {
+            try { beforeStart.run(); }
+            catch (MattermostRequestDeadline.ExpiredException ex) {
+                return ResponseEntity.ok(failureReply(ex.getMessage()));
+            }
             return retries.withinBudget(() -> processLocked(entry, linkToStudyLog));
         }
     }

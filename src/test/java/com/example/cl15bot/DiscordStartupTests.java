@@ -69,4 +69,36 @@ class DiscordStartupTests {
             bot.stop();
         }
     }
+
+    @Test void normalShutdownWaitsForQueuedVoiceSaveBeforeClosingDiscord() throws Exception {
+        var queue = new java.util.concurrent.LinkedBlockingQueue<Runnable>();
+        var clock = new DiscordStudySessionsTests.MutableClock();
+        clock.set("2026-10-14T01:00:00Z");
+        var recording = mock(StudyRecordingService.class);
+        when(recording.process(any())).thenReturn(org.springframework.http.ResponseEntity.ok().build());
+        var bot = new DiscordBot(new DiscordProperties("", "123456789012345678", "{\"414964289770881035\":\"member\"}"),
+                new BotProperties("", "notion", "study", "title", "members"), recording, clock, queue::add);
+        var client = mock(JDA.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(bot, "jda", client);
+        var sessions = (DiscordStudySessions) org.springframework.test.util.ReflectionTestUtils.getField(bot, "sessions");
+        sessions.ready(java.util.List.of(new DiscordStudySessions.Occupant("414964289770881035", "member", "voice")));
+        clock.set("2026-10-14T01:05:00Z");
+        sessions.checkpoint();
+        var stopper = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var stopped = stopper.submit(() -> bot.stop());
+            var save = queue.poll(2, TimeUnit.SECONDS);
+            assertNotNull(save);
+            verify(client, never()).shutdown();
+            assertFalse(stopped.isDone());
+            save.run();
+            stopped.get(2, TimeUnit.SECONDS);
+            verify(recording).process(any());
+            verify(client).shutdown();
+            sessions.ready(java.util.List.of(new DiscordStudySessions.Occupant("414964289770881035", "member", "voice")));
+            clock.set("2026-10-14T01:10:00Z");
+            sessions.update(new DiscordStudySessions.Occupant("414964289770881035", "member", "voice"), false);
+            assertTrue(queue.isEmpty());
+        } finally { stopper.shutdownNow(); bot.stop(); }
+    }
 }

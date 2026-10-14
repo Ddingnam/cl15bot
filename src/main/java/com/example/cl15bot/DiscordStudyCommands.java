@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -19,23 +20,34 @@ import org.slf4j.LoggerFactory;
 /** Manual input shares MM's parser and recording service; only the transport is Discord-specific. */
 public class DiscordStudyCommands extends ListenerAdapter {
     private static final Logger log = LoggerFactory.getLogger(DiscordStudyCommands.class);
-    private static final String PROCESSING = "⏳ 공부 기록을 처리 중입니다. 완료되면 결과를 알려드릴게요.\n결과가 오지 않으면 재입력 전에 Notion에서 저장 여부를 확인해주세요.";
     private final DiscordProperties properties;
     private final BotProperties notionProperties;
     private final DiscordMemberMapping mapping;
     private final StudyRecordingService recording;
     private final Clock clock;
     private final Executor executor;
+    private final BiConsumer<String, String> dm;
+    private final DiscordTasks tasks;
+    private volatile boolean stopping;
     private final AtomicBoolean registrationStarted = new AtomicBoolean();
 
     public DiscordStudyCommands(DiscordProperties properties, BotProperties notionProperties,
             DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock, Executor executor) {
+        this(properties, notionProperties, mapping, recording, clock, executor,
+                (id, text) -> log.warn("Discord DM fallback unavailable in standalone command listener"), new DiscordTasks());
+    }
+
+    DiscordStudyCommands(DiscordProperties properties, BotProperties notionProperties,
+            DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock, Executor executor,
+            BiConsumer<String, String> dm, DiscordTasks tasks) {
         this.properties = properties;
         this.notionProperties = notionProperties;
         this.mapping = mapping;
         this.recording = recording;
         this.clock = clock;
-        this.executor = executor;
+        this.executor = tasks.executor(executor);
+        this.dm = dm;
+        this.tasks = tasks;
     }
 
     public void register(Guild guild) {
@@ -52,6 +64,11 @@ public class DiscordStudyCommands extends ListenerAdapter {
 
     @Override public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
         if (!event.getName().equals("st")) return;
+        if (stopping) {
+            reply(event, "⚠️ 서버가 재시작 중이라 접수하지 못했습니다. 저장하지 않았습니다. 잠시 후 다시 입력해주세요.");
+            return;
+        }
+        var receivedAt = clock.instant();
         log.info("Discord /st received; targetGuild={} acknowledged={}",
                 event.getGuild() != null && event.getGuild().getId().equals(properties.guildId()), event.isAcknowledged());
         if (event.getGuild() == null || !event.getGuild().getId().equals(properties.guildId())) {
@@ -85,28 +102,59 @@ public class DiscordStudyCommands extends ListenerAdapter {
             return;
         }
         // ACK before any Notion calls; all edits retain the original ephemeral visibility.
-        event.reply(PROCESSING).setEphemeral(true).setAllowedMentions(List.of()).queue(hook -> {
-            try {
-                executor.execute(() -> {
-                    var response = recording.process(entry).getBody();
-                    if (response != null) edit(hook, response.text());
-                });
-            } catch (RejectedExecutionException ex) {
-                edit(hook, "⚠️ 현재 처리 중인 요청이 많아 접수하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 다시 입력해주세요.");
-            }
-        }, failure -> log.warn("Discord command acknowledgment failed; no save started: type={}",
-                failure.getClass().getSimpleName()));
+        Runnable acknowledged = tasks.begin();
+        try {
+            event.replyEmbeds(DiscordMessages.card(processing())).setEphemeral(true).setAllowedMentions(List.of()).queue(hook -> {
+                try {
+                    if (stopping) throw new RejectedExecutionException();
+                    executor.execute(() -> {
+                        var response = recording.processDiscord(entry, receivedAt, clock).getBody();
+                        if (response != null) edit(hook, userId, response.text());
+                    });
+                } catch (RejectedExecutionException ex) {
+                    edit(hook, userId, "⚠️ 현재 요청을 접수하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 다시 입력해주세요.");
+                } finally { acknowledged.run(); }
+            }, failure -> {
+                log.warn("Discord command acknowledgment failed; no save started: type={}", failure.getClass().getSimpleName());
+                acknowledged.run();
+            });
+        } catch (RuntimeException ex) {
+            acknowledged.run();
+            log.warn("Discord command acknowledgment failed; no save started: type={}", ex.getClass().getSimpleName());
+        }
     }
 
-    private static String bounded(String text) {
-        return text.length() <= 2000 ? text : text.substring(0, 1990) + "\n(일부 생략)";
+    void stopAccepting() { stopping = true; }
+
+    private String processing() {
+        String url = NotionStudyClient.pageLink(null, notionProperties.notionStudyLogUrl());
+        return "⏳ 공부 기록을 처리 중입니다.\n\n"
+                + "1~2분 후에도 결과가 없으면 아래 Study Log에서\n본인 기록을 확인해주세요.\n\n"
+                + "이미 저장됐을 수 있으니 확인 전에는 다시 입력하지 마세요."
+                + (url.isEmpty() ? "" : "\n\n🔗 [Study Log 전체 기록 확인](<" + url + ">)");
     }
     private static void reply(SlashCommandInteractionEvent event, String text) {
-        event.reply(bounded(text)).setEphemeral(true).setAllowedMentions(List.of()).queue(ignored -> {},
+        event.reply(DiscordMessages.bounded(text)).setEphemeral(true).setAllowedMentions(List.of()).queue(ignored -> {},
                 failure -> log.warn("Discord private reply failed: type={}", failure.getClass().getSimpleName()));
     }
-    private static void edit(InteractionHook hook, String text) {
-        hook.editOriginal(bounded(text)).setAllowedMentions(List.of()).queue(ignored -> {},
-                failure -> log.warn("Discord command result delivery failed: type={}", failure.getClass().getSimpleName()));
+    private void edit(InteractionHook hook, String userId, String text) {
+        String message = DiscordMessages.bounded(text);
+        Runnable complete = tasks.begin();
+        try {
+            var card = DiscordMessages.card(message);
+            var action = card == null ? hook.editOriginal(message).setEmbeds(List.of())
+                    : hook.editOriginalEmbeds(card).setContent("");
+            action.setAllowedMentions(List.of()).queue(ignored -> complete.run(), failure -> {
+                try { fallback(userId, message, failure); } finally { complete.run(); }
+            });
+        } catch (RuntimeException ex) {
+            try { fallback(userId, message, ex); } finally { complete.run(); }
+        }
+    }
+
+    private void fallback(String userId, String message, Throwable failure) {
+        log.warn("Discord command result delivery failed; trying DM without repeating save: type={}",
+                failure.getClass().getSimpleName());
+        dm.accept(userId, message);
     }
 }
