@@ -181,6 +181,7 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
                         String text = DiscordMessages.bounded(message);
                         var card = DiscordMessages.card(text);
                         return (card == null ? channel.sendMessage(text) : channel.sendMessageEmbeds(card))
+                                .setComponents(DiscordMessages.buttons(text))
                                 .setAllowedMentions(java.util.List.of());
                     })
                     .queue(ignored -> complete.run(), failure -> {

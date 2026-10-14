@@ -86,7 +86,7 @@ class DiscordStudyCommandsTests {
         assertEquals(ID, entry.getValue().userId());
         var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
         verify(hook).editOriginalEmbeds(card.capture());
-        assertEquals("공부 기록 완료", card.getValue().getTitle());
+        assertEquals("✅ 공부 기록 완료", card.getValue().getTitle());
         assertEquals("저장했습니다.", card.getValue().getDescription());
         verify(event, never()).getChannel();
     }
@@ -169,6 +169,7 @@ class DiscordStudyCommandsTests {
         assertEquals(12, entry.getValue().date().getDayOfMonth());
         verify(hook).editOriginal(contains("겹칩니다"));
         verify(edit).setEmbeds(List.of());
+        verify(edit).setComponents(List.of());
         verify(reply).setEphemeral(true);
     }
 

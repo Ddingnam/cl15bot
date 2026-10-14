@@ -48,10 +48,10 @@ class DiscordSafetyTests {
         assertTrue(result.endsWith(suffix));
         assertTrue(result.contains("…(일부 생략)"));
         var card = DiscordMessages.card(result);
-        assertEquals("공부 기록 완료", card.getTitle());
-        assertEquals(3, card.getFields().size());
+        assertEquals("✅ 공부 기록 완료", card.getTitle());
+        assertEquals(2, card.getFields().size());
         assertTrue(card.getFields().get(1).getValue().length() <= 1024);
-        assertTrue(card.getFields().get(2).getValue().contains(URL));
+        assertEquals(URL, DiscordMessages.buttons(result).getFirst().getButtons().getFirst().getUrl());
         for (int i = 0; i < result.length(); i++) {
             if (Character.isHighSurrogate(result.charAt(i))) assertTrue(Character.isLowSurrogate(result.charAt(++i)));
             else assertFalse(Character.isLowSurrogate(result.charAt(i)));
@@ -61,9 +61,14 @@ class DiscordSafetyTests {
     @Test void processingCardKeepsRecoveryLinkWhileWarningsStayPlain() {
         var card = DiscordMessages.card("⏳ 공부 기록을 처리 중입니다.\n\n"
                 + "확인 전에는 다시 입력하지 마세요.\n\n🔗 [Study Log 전체 기록 확인](<" + URL + ">)");
-        assertEquals("공부 기록 처리 중", card.getTitle());
+        assertEquals("⏳ 기록 저장 중", card.getTitle());
         assertEquals(0xF2C94C, card.getColorRaw());
-        assertTrue(card.getDescription().contains(URL));
+        assertFalse(card.getDescription().contains(URL));
+        var button = DiscordMessages.buttons("⏳ 처리 중\n🔗 [Study Log 전체 기록 확인](<" + URL + ">)")
+                .getFirst().getButtons().getFirst();
+        assertEquals(URL, button.getUrl());
+        assertEquals("Study Log 보기", button.getLabel());
+        assertNotNull(button.getEmoji());
         assertTrue(card.getDescription().contains("다시 입력하지 마세요"));
         assertNull(DiscordMessages.card("⚠️ 저장하지 않았습니다."));
     }

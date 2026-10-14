@@ -104,7 +104,9 @@ public class DiscordStudyCommands extends ListenerAdapter {
         // ACK before any Notion calls; all edits retain the original ephemeral visibility.
         Runnable acknowledged = tasks.begin();
         try {
-            event.replyEmbeds(DiscordMessages.card(processing())).setEphemeral(true).setAllowedMentions(List.of()).queue(hook -> {
+            String processing = processing();
+            event.replyEmbeds(DiscordMessages.card(processing)).setComponents(DiscordMessages.buttons(processing))
+                    .setEphemeral(true).setAllowedMentions(List.of()).queue(hook -> {
                 try {
                     if (stopping) throw new RejectedExecutionException();
                     executor.execute(() -> {
@@ -144,7 +146,7 @@ public class DiscordStudyCommands extends ListenerAdapter {
             var card = DiscordMessages.card(message);
             var action = card == null ? hook.editOriginal(message).setEmbeds(List.of())
                     : hook.editOriginalEmbeds(card).setContent("");
-            action.setAllowedMentions(List.of()).queue(ignored -> complete.run(), failure -> {
+            action.setComponents(DiscordMessages.buttons(message)).setAllowedMentions(List.of()).queue(ignored -> complete.run(), failure -> {
                 try { fallback(userId, message, failure); } finally { complete.run(); }
             });
         } catch (RuntimeException ex) {
