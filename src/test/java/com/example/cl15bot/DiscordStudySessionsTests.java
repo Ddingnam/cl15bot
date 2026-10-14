@@ -22,7 +22,7 @@ class DiscordStudySessionsTests {
     private final DiscordStudySessions.Occupant user = new DiscordStudySessions.Occupant(ID, "jmn", "channel-a");
 
     @BeforeEach void setup() {
-        when(recording.process(any())).thenReturn(ResponseEntity.ok(
+        when(recording.processDiscordAutomatic(any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "✅ 저장했습니다.")));
         sessions = new DiscordStudySessions(new DiscordMemberMapping("{\"" + ID + "\":\"정명남\"}"),
                 recording, clock, Runnable::run, (id, message) -> messages.add(message));
@@ -38,7 +38,7 @@ class DiscordStudySessionsTests {
         sessions.update(user, false);
         sessions.update(user, false);
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording, times(1)).process(entry.capture());
+        verify(recording, times(1)).processDiscordAutomatic(entry.capture());
         assertEquals(4, entry.getValue().minutes());
         assertEquals(19, entry.getValue().startTime().getHour());
         assertEquals(0, entry.getValue().startTime().getMinute());
@@ -60,7 +60,7 @@ class DiscordStudySessionsTests {
         clock.set("2026-10-13T15:02:00Z");
         sessions.update(user, false);
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording).process(entry.capture());
+        verify(recording).processDiscordAutomatic(entry.capture());
         assertEquals("2026-10-13", entry.getValue().date().toString());
         assertEquals(14, entry.getValue().endTime().getDayOfMonth());
         assertEquals(3, entry.getValue().minutes());
@@ -102,20 +102,20 @@ class DiscordStudySessionsTests {
         clock.set("2026-10-13T10:24:00Z");
         sessions.update(user, false);
         var entries = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording, times(2)).process(entries.capture());
+        verify(recording, times(2)).processDiscordAutomatic(entries.capture());
         assertEquals(4, entries.getAllValues().get(0).endTime().getMinute());
         assertEquals(20, entries.getAllValues().get(1).startTime().getMinute());
     }
 
     @Test void overlapReportsMeasuredPeriodAndDoesNotRetry() {
-        when(recording.process(any())).thenReturn(ResponseEntity.ok(
+        when(recording.processDiscordAutomatic(any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "⚠️ 겹침 https://notion.so/existing")));
         sessions.update(user, true);
         clock.set("2026-10-13T10:05:00Z");
         sessions.update(user, false);
         assertTrue(messages.getFirst().contains("측정 구간"));
         assertTrue(messages.getFirst().contains("https://notion.so/existing"));
-        verify(recording, times(1)).process(any());
+        verify(recording, times(1)).processDiscordAutomatic(any());
     }
 
     @Test void mappingRejectsTwoAccountsForSameMember() {
@@ -130,7 +130,7 @@ class DiscordStudySessionsTests {
         clock.set("2026-10-13T11:03:00Z");
         sessions.update(user, false);
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording).process(entry.capture());
+        verify(recording).processDiscordAutomatic(entry.capture());
         assertEquals(20, entry.getValue().startTime().getHour());
         assertEquals(3, entry.getValue().minutes());
     }

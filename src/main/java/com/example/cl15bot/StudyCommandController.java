@@ -77,9 +77,10 @@ public class StudyCommandController {
             if (userId.isBlank() || userId.length() > 200) {
                 return ResponseEntity.ok(failureReply("Mattermost 사용자 정보를 확인하지 못했습니다. Mattermost에서 다시 실행하고, 계속 실패하면 관리자에게 문의해주세요."));
             }
-            return ResponseEntity.ok(reply("Mattermost 사용자 ID: " + userId
-                    + "\n연결된 Members 이름: " + mapping.nameFor(userId).orElse("미등록")
-                    + "\n미등록이면 관리자에게 이 사용자 ID와 Members 이름을 전달해주세요."));
+            String memberName = mapping.nameFor(userId).orElse(null);
+            return ResponseEntity.ok(reply("**🆔 Mattermost 사용자 ID**\n`" + userId + "`\n\n"
+                    + "**📚 연결된 Members 이름**\n" + (memberName == null ? "미등록" : memberName)
+                    + (memberName == null ? "\n\n**📌 계정 연결 안내**\n관리자에게 위 사용자 ID와 연결할 Members 이름을 전달해주세요." : "")));
         }
         StudyEntry entry;
         try {

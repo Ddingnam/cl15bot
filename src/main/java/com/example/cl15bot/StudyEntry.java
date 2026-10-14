@@ -17,11 +17,15 @@ public record StudyEntry(int minutes, String subject, String memberName, String 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HHmm").withResolverStyle(ResolverStyle.STRICT);
     public static final String EXAMPLE = "예: /st 1013 1900 2030 Java 복습";
     public static final String CROSS_DAY_EXAMPLE = "예: /st 1013 2300 1014 0100 Java 복습";
-    public static final String HELP = "같은 날: /st <MMDD> <시작 HHmm> <종료 HHmm> <공부 내용>\n" + EXAMPLE
-            + "\n다른 날: /st <MMDD> <시작 HHmm> <종료 MMDD> <종료 HHmm> <공부 내용>\n" + CROSS_DAY_EXAMPLE
-            + "\n날짜는 2026년·한국 시간 기준입니다. 자정을 넘기면 종료 날짜도 적어주세요. 공부 시간은 1~1440분입니다."
-            + "\n이름은 MM 계정에 연결된 Members 이름을 사용합니다. 계정 확인: /st 내정보"
-            + "\n공부 내용은 문자로 시작해주세요. 네 자리 숫자로 시작하면 날짜·시간과 혼동될 수 있습니다.";
+    public static final String HELP = "**📖 공부 기록 사용법**\n\n"
+            + "`/st` 뒤에 공부 내용을 입력해주세요.\n\n"
+            + "**• 같은 날**\n`" + EXAMPLE.replace("예: ", "") + "`\n"
+            + "날짜 · 시작 시각 · 종료 시각 · 공부 내용\n\n"
+            + "**• 자정을 넘긴 경우**\n`" + CROSS_DAY_EXAMPLE.replace("예: ", "") + "`\n"
+            + "시작 날짜 · 시작 시각 · 종료 날짜 · 종료 시각 · 공부 내용\n\n"
+            + "**• 계정 확인**\n`/st 내정보`\n\n"
+            + "**• 입력 기준**\n날짜: MMDD / 시각: HHmm\n"
+            + YEAR + "년 · 한국 시간 기준\n공부 시간: 1분~24시간, 미래 시각 입력 불가\n공부 내용은 문자로 시작";
 
     public ZonedDateTime startTime() { return endTime.minusMinutes(minutes); }
     public LocalDate date() { return startTime().toLocalDate(); }

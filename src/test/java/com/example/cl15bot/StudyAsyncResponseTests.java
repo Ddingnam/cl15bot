@@ -92,7 +92,7 @@ class StudyAsyncResponseTests {
         var result = ArgumentCaptor.forClass(StudyCommandController.CommandResponse.class);
         verify(sender).send(eq(URI.create(CALLBACK)), result.capture());
         assertEquals("ephemeral", result.getValue().response_type());
-        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📚 공부 내용 : Java 복습\n\n🔗 [Study Log 전체 기록 확인](<" + LINK + ">)", result.getValue().text());
+        assertEquals("✅ 정명남님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 19:00 ~ 20:30 · 90분\n📝 공부 내용 : Java 복습\n\n🔗 [Study Log 전체 기록 확인](<" + LINK + ">)", result.getValue().text());
         verify(notion, times(1)).saveToStudyLog(any(), eq("member-id"));
     }
 

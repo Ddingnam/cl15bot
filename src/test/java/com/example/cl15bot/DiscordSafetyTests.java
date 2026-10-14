@@ -40,7 +40,7 @@ class DiscordSafetyTests {
     }
 
     @Test void longSuccessPreservesResultTimeAndLinkAndDoesNotSplitEmoji() {
-        String prefix = "✅ member님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-13 19:00 ~ 20:00 · 60분\n📚 공부 내용 : ";
+        String prefix = "✅ member님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-13 19:00 ~ 20:00 · 60분\n📝 공부 내용 : ";
         String suffix = "\n\n🔗 [Study Log 전체 기록 확인](<" + URL + ">)";
         String result = DiscordMessages.bounded(prefix + "📚".repeat(1100) + suffix);
         assertTrue(result.length() <= 2000);
@@ -49,8 +49,10 @@ class DiscordSafetyTests {
         assertTrue(result.contains("…(일부 생략)"));
         var card = DiscordMessages.card(result);
         assertEquals("✅ 공부 기록 완료", card.getTitle());
-        assertEquals(2, card.getFields().size());
-        assertTrue(card.getFields().get(1).getValue().length() <= 1024);
+        assertTrue(card.getDescription().length() <= 4096);
+        assertTrue(card.getDescription().contains("…(일부 생략)"));
+        assertTrue(card.getDescription().contains("\n\n\u200B\n\n"));
+        assertEquals("결과는 본인에게만 표시됩니다", card.getFooter().getText());
         assertEquals(URL, DiscordMessages.buttons(result).getFirst().getButtons().getFirst().getUrl());
         for (int i = 0; i < result.length(); i++) {
             if (Character.isHighSurrogate(result.charAt(i))) assertTrue(Character.isLowSurrogate(result.charAt(++i)));

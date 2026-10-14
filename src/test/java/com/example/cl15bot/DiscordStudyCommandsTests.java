@@ -87,7 +87,7 @@ class DiscordStudyCommandsTests {
         var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
         verify(hook).editOriginalEmbeds(card.capture());
         assertEquals("✅ 공부 기록 완료", card.getValue().getTitle());
-        assertEquals("저장했습니다.", card.getValue().getDescription());
+        assertTrue(card.getValue().getDescription().contains("저장했습니다."));
         verify(event, never()).getChannel();
     }
 
@@ -99,14 +99,18 @@ class DiscordStudyCommandsTests {
         verify(event, times(2)).replyEmbeds(card.capture());
         var help = card.getAllValues().get(0);
         var info = card.getAllValues().get(1);
-        assertEquals("공부 기록 사용법", help.getTitle());
-        assertTrue(help.getDescription().contains("`입력:`은 직접 적지 않습니다"));
-        assertTrue(help.getFields().get(0).getValue().startsWith("`1013 1900 2030 Java 복습`"));
-        assertTrue(help.getFields().get(1).getValue().startsWith("`1013 2300 1014 0100 Java 복습`"));
-        assertEquals("👤 내 정보", info.getTitle());
-        assertEquals("`" + ID + "`", info.getFields().get(0).getValue());
-        assertEquals("정명남", info.getFields().get(1).getValue());
-        assertEquals(2, info.getFields().size());
+        assertEquals("📖 공부 기록 사용법", help.getTitle());
+        assertFalse(help.getDescription().contains("입력:"));
+        assertTrue(help.getDescription().contains("`/st 1013 1900 2030 Java 복습`"));
+        assertTrue(help.getDescription().contains("`/st 1013 2300 1014 0100 Java 복습`"));
+        assertTrue(help.getDescription().contains("`/st 내정보`"));
+        assertTrue(help.getDescription().contains("\n\n\u200B\n\n"));
+        assertNull(info.getTitle());
+        assertFalse(info.getDescription().contains("공부 기록에 사용할 계정 정보"));
+        assertTrue(info.getDescription().contains("`" + ID + "`"));
+        assertTrue(info.getDescription().contains("정명남"));
+        assertTrue(info.getDescription().contains("\n\n\u200B\n\n"));
+        assertEquals("결과는 본인에게만 표시됩니다", info.getFooter().getText());
         verify(reply, times(2)).setEphemeral(true);
         verifyNoInteractions(recording);
         assertTrue(tasks.isEmpty());
@@ -118,8 +122,8 @@ class DiscordStudyCommandsTests {
         commands.onSlashCommandInteraction(event);
         var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
         verify(event).replyEmbeds(card.capture());
-        assertEquals("미등록", card.getValue().getFields().get(1).getValue());
-        assertTrue(card.getValue().getFields().get(2).getValue().contains("관리자에게"));
+        assertTrue(card.getValue().getDescription().contains("미등록"));
+        assertTrue(card.getValue().getDescription().contains("관리자에게"));
         verify(reply).setEphemeral(true);
         verifyNoInteractions(recording);
         assertTrue(tasks.isEmpty());

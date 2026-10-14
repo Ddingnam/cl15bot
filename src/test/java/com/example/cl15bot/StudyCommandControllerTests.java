@@ -58,7 +58,7 @@ class StudyCommandControllerTests {
     void storesStudyWithKoreanDateAndRepliesPrivately() throws Exception {
         mvc.perform(command("1012 0000 0100 Java 스트림 복습"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.response_type").value("ephemeral"))
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📝 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java 스트림 복습", saved.getValue().subject());
@@ -139,7 +139,9 @@ class StudyCommandControllerTests {
     @ValueSource(strings = {"", "help", "도움말", "0 Java", "1441 Java", "60", "abc Java", "-1 Java", "60.5 Java", "60 Java 복습", "60 | Java", "60 홍길동 | ", "60 홍길동"})
     void helpAndInvalidInputDoNotWrite(String text) throws Exception {
         mvc.perform(command(text)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString(StudyEntry.EXAMPLE)));
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString(
+                        text.isBlank() || text.equals("help") || text.equals("도움말")
+                                ? StudyEntry.EXAMPLE.replace("예: ", "") : StudyEntry.EXAMPLE)));
         verifyNoInteractions(notion);
     }
 
@@ -235,14 +237,16 @@ class StudyCommandControllerTests {
     @Test
     void koreanAccountInfoReportsLinkedNameWithoutNotionQuery() throws Exception {
         mvc.perform(command("내정보"))
-                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("연결된 Members 이름: 홍길동")));
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.containsString("**📚 연결된 Members 이름**\n홍길동")))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("본인에게만"))))
+                .andExpect(jsonPath("$.text").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("관리자에게"))));
         verifyNoInteractions(notion, members);
     }
 
     @Test
     void crossingMidnightUsesStartDateAndExactDuration() throws Exception {
         mvc.perform(command("1011 2300 1012 0100 Java")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-11 23:00 ~ 2026-10-12 01:00 · 120분\n📚 공부 내용 : Java"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-11 23:00 ~ 2026-10-12 01:00 · 120분\n📝 공부 내용 : Java"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("2026-10-11", saved.getValue().date().toString());
@@ -259,7 +263,7 @@ class StudyCommandControllerTests {
     @Test
     void multilineSubjectIsDisplayedOnOneLineButStoredUnmodified() throws Exception {
         mvc.perform(command("1012 0000 0100 Java\n스트림 복습"))
-                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📚 공부 내용 : Java 스트림 복습"));
+                .andExpect(jsonPath("$.text").value("✅ 홍길동님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-12 00:00 ~ 01:00 · 60분\n📝 공부 내용 : Java 스트림 복습"));
         ArgumentCaptor<StudyEntry> saved = ArgumentCaptor.forClass(StudyEntry.class);
         verify(notion).saveToStudyLog(saved.capture(), eq(MEMBER_PAGE));
         assertEquals("Java\n스트림 복습", saved.getValue().subject());

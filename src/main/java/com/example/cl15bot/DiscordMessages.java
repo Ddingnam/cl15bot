@@ -11,33 +11,39 @@ import java.util.regex.Pattern;
 final class DiscordMessages {
     private static final int LIMIT = 2000;
     private static final String OMITTED = "…(일부 생략)";
+    private static final String FOOTER = "결과는 본인에게만 표시됩니다";
+    // Discord trims empty lines; a zero-width character preserves intentional spacing.
+    private static final String GAP = "\n\n\u200B\n\n";
     private static final Pattern RECORD_LINK = Pattern.compile("(?m)^🔗 \\[([^\\]]+)\\]\\(<(https://[^>]+)>\\)\\s*$");
 
     static MessageEmbed help() {
-        return new EmbedBuilder().setColor(0x5865F2).setTitle("공부 기록 사용법")
-                .setDescription("`/st` 선택 → `입력` 옵션 선택 → 내용 입력\n\n"
-                        + "아래 예시의 내용만 입력해주세요. `입력:`은 직접 적지 않습니다.")
-                .addField("같은 날", "`" + StudyEntry.EXAMPLE.replace("예: /st ", "") + "`\n"
-                        + "날짜 · 시작 시각 · 종료 시각 · 공부 내용", false)
-                .addField("자정을 넘긴 경우", "`" + StudyEntry.CROSS_DAY_EXAMPLE.replace("예: /st ", "") + "`\n"
-                        + "시작 날짜 · 시작 시각 · 종료 날짜 · 종료 시각 · 공부 내용", false)
-                .addField("계정 확인", "입력란에 `내정보`를 입력해주세요.", false)
-                .addField("입력 기준", "• 날짜: MMDD / 시각: HHmm\n"
-                        + "• " + StudyEntry.YEAR + "년 · 한국 시간 기준\n"
-                        + "• 공부 시간: 1분~24시간, 미래 시각은 입력할 수 없습니다.\n"
-                        + "• 공부 내용은 문자로 시작해주세요.", false)
-                .setFooter("본인에게만 표시됩니다").build();
+        return new EmbedBuilder().setColor(0x5865F2).setTitle("📖 공부 기록 사용법")
+                .setDescription("\u200B\n\n" + spaced(
+                        "`/st` 선택 → `입력` 옵션 선택 → 공부 내용 입력",
+                        "**• 같은 날**\n`" + StudyEntry.EXAMPLE.replace("예: ", "") + "`\n"
+                                + "날짜 · 시작 시각 · 종료 시각 · 공부 내용",
+                        "**• 자정을 넘긴 경우**\n`" + StudyEntry.CROSS_DAY_EXAMPLE.replace("예: ", "") + "`\n"
+                                + "시작 날짜 · 시작 시각 · 종료 날짜 · 종료 시각 · 공부 내용",
+                        "**• 계정 확인**\n`/st 내정보`",
+                        "**• 입력 기준**\n날짜: MMDD / 시각: HHmm\n"
+                                + StudyEntry.YEAR + "년 · 한국 시간 기준\n"
+                                + "공부 시간: 1분~24시간, 미래 시각 입력 불가\n공부 내용은 문자로 시작"))
+                .setFooter(FOOTER).build();
     }
 
     static MessageEmbed account(String userId, String memberName) {
-        var card = new EmbedBuilder().setColor(0x5865F2).setTitle("👤 내 정보")
-                .setDescription("공부 기록에 사용할 계정 정보입니다.")
-                .addField("🆔 Discord 사용자 ID", "`" + userId + "`", false)
-                .addField("📚 연결된 Members 이름", memberName == null ? "미등록" : memberName, false);
+        var blocks = new java.util.ArrayList<String>();
+        blocks.add("**🆔 Discord 사용자 ID**\n`" + userId + "`");
+        blocks.add("**📚 연결된 Members 이름**\n" + (memberName == null ? "미등록" : memberName));
         if (memberName == null) {
-            card.addField("📌 계정 연결 안내", "관리자에게 위 사용자 ID와 연결할 Members 이름을 전달해주세요.", false);
+            blocks.add("**📌 계정 연결 안내**\n관리자에게 위 사용자 ID와 연결할 Members 이름을 전달해주세요.");
         }
-        return card.setFooter("본인에게만 표시됩니다").build();
+        return new EmbedBuilder().setColor(0x5865F2).setDescription(spaced(blocks.toArray(String[]::new)))
+                .setFooter(FOOTER).build();
+    }
+
+    private static String spaced(String... blocks) {
+        return String.join(GAP, blocks) + "\n\n\u200B";
     }
 
     static List<ActionRow> buttons(String text) {
@@ -53,30 +59,33 @@ final class DiscordMessages {
     static MessageEmbed card(String text) {
         if (text.startsWith("⏳")) {
             String description = RECORD_LINK.matcher(text.substring(text.indexOf('\n') + 1)).replaceAll("").strip();
+            description = description.replace("이미 저장됐을 수 있으니 확인 전에는", "이미 저장됐을 수 있으니\n확인 전에는");
             return new EmbedBuilder().setColor(0xF2C94C).setTitle("⏳ 기록 저장 중")
-                    .setDescription(description)
-                    .setFooter("결과는 본인에게만 표시됩니다").build();
+                    .setDescription("\u200B\n\n" + spaced(description.split("\n\n")))
+                    .setFooter(FOOTER).build();
         }
         if (!text.startsWith("✅")) return null;
         String[] lines = text.split("\n");
-        var card = new EmbedBuilder().setColor(0x49B98A).setTitle("✅ 공부 기록 완료")
-                .setDescription(lines[0].substring("✅".length()).strip());
+        var blocks = new java.util.ArrayList<String>();
+        blocks.add(lines[0].substring("✅".length()).strip());
         for (String line : lines) {
-            if (line.startsWith("🕒 ")) card.addField("🕒 공부 시간", line.substring("🕒 ".length()), false);
-            else if (line.startsWith("📚 공부 내용 : ")) {
-                String subject = line.substring("📚 공부 내용 : ".length());
-                card.addField("📚 공부 내용", subject.length() <= 1024 ? subject
-                        : truncate(subject, 1024 - OMITTED.length()) + OMITTED, false);
+            if (line.startsWith("🕒 ")) blocks.add("**🕒 공부 시간**\n" + line.substring("🕒 ".length()));
+            else if (line.startsWith("📝 공부 내용 : ")) {
+                String subject = line.substring("📝 공부 내용 : ".length());
+                blocks.add("**📝 공부 내용**\n" + (subject.length() <= 1024 ? subject
+                        : truncate(subject, 1024 - OMITTED.length()) + OMITTED));
             }
         }
-        return card.setFooter("한국 시간 기준").build();
+        return new EmbedBuilder().setColor(0x49B98A).setTitle("✅ 공부 기록 완료")
+                .setDescription("\u200B\n\n" + spaced(blocks.toArray(String[]::new)))
+                .setFooter(FOOTER).build();
     }
     static String bounded(String text) {
         if (text.length() <= LIMIT) return text;
-        int subject = text.indexOf("📚 공부 내용 : ");
+        int subject = text.indexOf("📝 공부 내용 : ");
         int link = text.lastIndexOf("\n🔗 ");
         if (subject >= 0) {
-            int start = subject + "📚 공부 내용 : ".length();
+            int start = subject + "📝 공부 내용 : ".length();
             int end = link > start ? link : text.length();
             while (end > start && text.charAt(end - 1) == '\n') end--;
             String prefix = text.substring(0, start), suffix = text.substring(end);

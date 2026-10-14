@@ -102,7 +102,7 @@ public class DiscordStudySessions {
             }
             StudyEntry entry = new StudyEntry((int) minutes, "모각코", session.name(), session.userId(),
                     session.username(), session.channelId(), endTime);
-            var response = recording.process(entry).getBody();
+            var response = recording.processDiscordAutomatic(entry).getBody();
             if (response != null) {
                 String text = response.text();
                 if (text.startsWith("⚠️")) text += "\n🕒 측정 구간: " + period + " · " + minutes + "분\n자동 재저장은 하지 않습니다. Notion 확인 후 수동 처리해주세요.";

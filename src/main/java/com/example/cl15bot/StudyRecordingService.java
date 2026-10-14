@@ -41,6 +41,10 @@ public class StudyRecordingService {
         return process(entry, true);
     }
 
+    public ResponseEntity<CommandResponse> processDiscordAutomatic(StudyEntry entry) {
+        return process(entry, true);
+    }
+
     public ResponseEntity<CommandResponse> processDiscord(StudyEntry entry, java.time.Instant receivedAt,
             java.time.Clock clock) {
         return process(entry, true, () -> {
@@ -84,7 +88,7 @@ public class StudyRecordingService {
             return ResponseEntity.ok(reply("✅ " + display(entry.memberName()) + "님의 공부 기록을 저장했습니다.\n"
                     + (linkToStudyLog ? "\n" : "")
                     + "🕒 " + NotionStudyClient.period(entry.startTime(), entry.endTime()) + " · " + entry.minutes() + "분\n"
-                    + "📚 공부 내용 : " + display(entry.subject())
+                    + "📝 공부 내용 : " + display(entry.subject())
                     + (pageUrl == null || pageUrl.isEmpty() ? "" : (linkToStudyLog ? "\n\n" : "\n") + "🔗 ["
                             + (linkToStudyLog ? "Study Log 전체 기록 확인" : "Notion 기록 확인") + "](<" + pageUrl + ">)")));
         } catch (NotionStudyClient.OverlappingStudyException ex) {

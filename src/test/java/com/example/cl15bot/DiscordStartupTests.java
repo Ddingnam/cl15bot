@@ -75,7 +75,7 @@ class DiscordStartupTests {
         var clock = new DiscordStudySessionsTests.MutableClock();
         clock.set("2026-10-14T01:00:00Z");
         var recording = mock(StudyRecordingService.class);
-        when(recording.process(any())).thenReturn(org.springframework.http.ResponseEntity.ok().build());
+        when(recording.processDiscordAutomatic(any())).thenReturn(org.springframework.http.ResponseEntity.ok().build());
         var bot = new DiscordBot(new DiscordProperties("", "123456789012345678", "{\"414964289770881035\":\"member\"}"),
                 new BotProperties("", "notion", "study", "title", "members"), recording, clock, queue::add);
         var client = mock(JDA.class);
@@ -93,7 +93,7 @@ class DiscordStartupTests {
             assertFalse(stopped.isDone());
             save.run();
             stopped.get(2, TimeUnit.SECONDS);
-            verify(recording).process(any());
+            verify(recording).processDiscordAutomatic(any());
             verify(client).shutdown();
             sessions.ready(java.util.List.of(new DiscordStudySessions.Occupant("414964289770881035", "member", "voice")));
             clock.set("2026-10-14T01:10:00Z");

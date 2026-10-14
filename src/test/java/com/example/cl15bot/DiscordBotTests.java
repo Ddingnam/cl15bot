@@ -41,7 +41,7 @@ class DiscordBotTests {
         member = member(ID, false);
         var botMember = member("123456789012345679", true);
         when(channel.getMembers()).thenReturn(List.of(member, botMember));
-        when(recording.process(any())).thenReturn(ResponseEntity.ok(
+        when(recording.processDiscordAutomatic(any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "✅ 저장했습니다.")));
     }
 
@@ -66,7 +66,7 @@ class DiscordBotTests {
         bot.onGuildVoiceUpdate(departure);
         bot.onGuildVoiceUpdate(departure);
         var entry = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording, times(1)).process(entry.capture());
+        verify(recording, times(1)).processDiscordAutomatic(entry.capture());
         assertEquals(ID, entry.getValue().userId());
         assertEquals(3, entry.getValue().minutes());
     }
@@ -91,7 +91,7 @@ class DiscordBotTests {
         when(departure.getMember()).thenReturn(member);
         bot.onGuildVoiceUpdate(departure);
         var entries = ArgumentCaptor.forClass(StudyEntry.class);
-        verify(recording, times(2)).process(entries.capture());
+        verify(recording, times(2)).processDiscordAutomatic(entries.capture());
         assertEquals(3, entries.getAllValues().get(0).endTime().getMinute());
         assertEquals(10, entries.getAllValues().get(1).startTime().getMinute());
     }

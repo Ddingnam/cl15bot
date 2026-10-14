@@ -71,7 +71,7 @@ Java 21 · Spring Boot 4.1.1 · Gradle 기반 Mattermost → Notion 공부 기�
 ✅ 정명남님의 공부 기록을 저장했습니다.
 
 🕒 2026-10-13 23:00 ~ 2026-10-14 01:00 · 120분
-📚 공부 내용 : Java 복습
+📝 공부 내용 : Java 복습
 
 🔗 Study Log 전체 기록 확인 (공용 Study Log 링크)
 ```
