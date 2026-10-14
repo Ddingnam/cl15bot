@@ -18,7 +18,7 @@ class NotionPageResponseTests {
     private static final String LINK = "https://www.notion.so/00000000000000000000000000000001";
     private static final String SCHEMA = """
             {"properties":{"스터디":{"type":"title"},"날짜 ":{"type":"date"},
-            "이름":{"type":"relation"},"시작 시간":{"type":"date"},"종료 시간 ":{"type":"date"}}}
+            "이름":{"type":"relation"},"시작 시간":{"type":"date"},"종료 시간 ":{"type":"date"},"텍스트":{"type":"rich_text"}}}
             """;
     private final RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

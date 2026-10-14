@@ -22,12 +22,50 @@ class NotionStudyClientTests {
     private static final String SCHEMA = """
             {"properties":{"스터디":{"type":"title"},"날짜%s":{"type":"date"},
             "이름":{"type":"relation"},"시작 시간":{"type":"date"},"종료 시간%s":{"type":"date"},
-            "총 공부 시간":{"type":"formula"}}}
+            "총 공부 시간":{"type":"formula"},"텍스트":{"type":"rich_text"}}}
             """;
 
     private StudyEntry entry() {
         return new StudyEntry(60, "Java 복습", "홍길동", "u1", "홍길동", "c1",
                 ZonedDateTime.parse("2026-10-12T18:30:00+09:00[Asia/Seoul]"));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(StudyEntry.RegistrationSource.class)
+    void registrationSourceIsWrittenWithTheStudyInTheSameRequest(StudyEntry.RegistrationSource source) {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        NotionStudyClient client = new NotionStudyClient(
+                new BotProperties("slash", "notion", "source-id", "스터디", "members"), builder.build());
+        var base = entry();
+        // Identical subject across routes verifies that the source is not inferred from study content.
+        var study = new StudyEntry(base.minutes(), "모각코", base.memberName(), base.userId(), base.userName(),
+                base.channelId(), base.endTime(), source);
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id"))
+                .andRespond(withSuccess(SCHEMA.formatted("", ""), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id/query"))
+                .andRespond(withSuccess("{\"results\":[],\"has_more\":false}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.notion.com/v1/pages"))
+                .andExpect(jsonPath("$.properties['텍스트'].rich_text[0].text.content").value(source.label()))
+                .andRespond(withSuccess("{\"url\":\"https://www.notion.so/00000000000000000000000000000001\"}", MediaType.APPLICATION_JSON));
+        client.save(study, "member-id");
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "wrong-type"})
+    void invalidSourceColumnStopsBeforeAnySave(String scenario) {
+        String schema = SCHEMA.formatted("", "");
+        schema = scenario.equals("missing") ? schema.replace(",\"텍스트\":{\"type\":\"rich_text\"}", "")
+                : schema.replace("\"텍스트\":{\"type\":\"rich_text\"}", "\"텍스트\":{\"type\":\"formula\"}");
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.notion.com/v1");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        var client = new NotionStudyClient(new BotProperties("slash", "notion", "source-id", "스터디", "members"), builder.build());
+        server.expect(requestTo("https://api.notion.com/v1/data_sources/source-id"))
+                .andRespond(withSuccess(schema, MediaType.APPLICATION_JSON));
+        var error = assertThrows(NotionStudyClient.StudySchemaException.class, () -> client.save(entry(), "member-id"));
+        assertTrue(error.getMessage().contains("텍스트"));
+        server.verify();
     }
 
     @org.junit.jupiter.api.Test
@@ -203,7 +241,8 @@ class NotionStudyClientTests {
                 .andExpect(jsonPath("$.properties['이름'].relation[0].id").value("00000000-0000-0000-0000-000000000001"))
                 .andExpect(jsonPath("$.properties['시작 시간'].date.start").value("2026-10-12T17:30+09:00"))
                 .andExpect(jsonPath("$.properties['종료 시간" + suffix + "'].date.start").value("2026-10-12T18:30+09:00"))
-                .andExpect(jsonPath("$.properties.length()").value(5))
+                .andExpect(jsonPath("$.properties['텍스트'].rich_text[0].text.content").value("모각봇 · Mattermost"))
+                .andExpect(jsonPath("$.properties.length()").value(6))
                 .andExpect(jsonPath("$.properties['총 공부 시간']").doesNotExist())
                 .andExpect(jsonPath("$.properties['시즌 학습 시간 (분)']").doesNotExist())
                 .andRespond(withSuccess("{\"id\":\"page-123\",\"url\":\"https://www.notion.so/page-123\"}", MediaType.APPLICATION_JSON));

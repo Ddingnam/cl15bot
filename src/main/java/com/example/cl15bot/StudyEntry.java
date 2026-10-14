@@ -10,7 +10,18 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 
 public record StudyEntry(int minutes, String subject, String memberName, String userId, String userName,
-        String channelId, ZonedDateTime endTime) {
+        String channelId, ZonedDateTime endTime, RegistrationSource registrationSource) {
+    public StudyEntry(int minutes, String subject, String memberName, String userId, String userName,
+            String channelId, ZonedDateTime endTime) {
+        this(minutes, subject, memberName, userId, userName, channelId, endTime, RegistrationSource.MATTERMOST);
+    }
+
+    public enum RegistrationSource {
+        MATTERMOST("모각봇 · Mattermost"), DISCORD_MANUAL("모각봇 · Discord 수동"), DISCORD_VOICE("모각봇 · Discord 음성");
+        private final String label;
+        RegistrationSource(String label) { this.label = label; }
+        public String label() { return label; }
+    }
     public static final int YEAR = 2026;
     private static final ZoneId KOREA = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
@@ -95,7 +106,8 @@ public record StudyEntry(int minutes, String subject, String memberName, String 
                     + "로 사용자 ID를 확인하고 관리자에게 계정 연결을 요청해주세요.");
         }
         if (memberName.length() > 200) throw invalid("연결된 Members 이름이 너무 깁니다. 관리자에게 계정 연결 설정 확인을 요청해주세요.");
-        return new StudyEntry((int) minutes, subject.strip(), memberName.strip(), userId, userName, channelId, end);
+        return new StudyEntry((int) minutes, subject.strip(), memberName.strip(), userId, userName, channelId, end,
+                platform == Platform.DISCORD ? RegistrationSource.DISCORD_MANUAL : RegistrationSource.MATTERMOST);
     }
 
     private static LocalDate date(String text) { return LocalDate.parse(YEAR + text, DATE); }

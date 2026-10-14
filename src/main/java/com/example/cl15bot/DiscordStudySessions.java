@@ -101,7 +101,7 @@ public class DiscordStudySessions {
                 return;
             }
             StudyEntry entry = new StudyEntry((int) minutes, "모각코", session.name(), session.userId(),
-                    session.username(), session.channelId(), endTime);
+                    session.username(), session.channelId(), endTime, StudyEntry.RegistrationSource.DISCORD_VOICE);
             var response = recording.processDiscordAutomatic(entry).getBody();
             if (response != null) {
                 String text = response.text();

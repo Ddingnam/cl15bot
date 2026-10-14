@@ -44,6 +44,7 @@ class DiscordStudySessionsTests {
         assertEquals(0, entry.getValue().startTime().getMinute());
         assertEquals(0, entry.getValue().endTime().getSecond());
         assertEquals("모각코", entry.getValue().subject());
+        assertEquals(StudyEntry.RegistrationSource.DISCORD_VOICE, entry.getValue().registrationSource());
     }
 
     @Test void rejectsActual179SecondsEvenWhenRoundedIntervalIsThreeMinutes() {

@@ -51,6 +51,7 @@ public class NotionStudyClient {
                 columns.get(properties.notionTitleProperty()), Map.of("title", richText(entry.subject())),
                 columns.get("날짜"), Map.of("date", Map.of("start", entry.date().toString())),
                 columns.get("이름"), Map.of("relation", List.of(Map.of("id", memberPageId))),
+                columns.get("텍스트"), Map.of("rich_text", richText(entry.registrationSource().label())),
                 columns.get("시작 시간"), Map.of("date", Map.of("start", entry.startTime().toOffsetDateTime().toString())),
                 columns.get("종료 시간"), Map.of("date", Map.of("start", entry.endTime().toOffsetDateTime().toString())));
         MattermostRequestDeadline.check();
@@ -169,7 +170,7 @@ public class NotionStudyClient {
         }
         Map<String, String> resolved = new LinkedHashMap<>();
         Map<String, String> expected = Map.of(properties.notionTitleProperty(), "title",
-                "날짜", "date", "이름", "relation", "시작 시간", "date", "종료 시간", "date");
+                "날짜", "date", "이름", "relation", "시작 시간", "date", "종료 시간", "date", "텍스트", "rich_text");
         for (var column : expected.entrySet()) {
             var candidates = schema.properties().entrySet().stream()
                     .filter(actual -> actual.getKey().strip().equals(column.getKey().strip())).toList();

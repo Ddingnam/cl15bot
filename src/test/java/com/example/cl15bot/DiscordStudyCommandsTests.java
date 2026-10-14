@@ -83,6 +83,7 @@ class DiscordStudyCommandsTests {
         assertEquals(1, entry.getValue().minutes());
         assertEquals("정명남", entry.getValue().memberName());
         assertEquals("Java 복습", entry.getValue().subject());
+        assertEquals(StudyEntry.RegistrationSource.DISCORD_MANUAL, entry.getValue().registrationSource());
         assertEquals(ID, entry.getValue().userId());
         var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
         verify(hook).editOriginalEmbeds(card.capture());
