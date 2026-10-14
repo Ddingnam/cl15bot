@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./banner.svg" alt="모각봇 배너" width="100%">
+<img src="./docs/banner.svg" alt="모각봇 배너" width="100%">
 
 <br>
 
