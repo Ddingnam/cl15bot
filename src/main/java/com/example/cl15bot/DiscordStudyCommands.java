@@ -84,9 +84,9 @@ public class DiscordStudyCommands extends ListenerAdapter {
             return;
         }
         if (input.equals("내정보") || input.equalsIgnoreCase("whoami")) {
-            reply(event, "Discord 사용자 ID: " + userId + "\n연결된 Members 이름: "
-                    + mapping.nameFor(userId).orElse("미등록")
-                    + "\n미등록이면 관리자에게 이 사용자 ID와 Members 이름을 전달해주세요.");
+            event.replyEmbeds(DiscordMessages.account(userId, mapping.nameFor(userId).orElse(null)))
+                    .setEphemeral(true).setAllowedMentions(List.of()).queue(ignored -> {},
+                            failure -> log.warn("Discord account reply failed: type={}", failure.getClass().getSimpleName()));
             return;
         }
         StudyEntry entry;

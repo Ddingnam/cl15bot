@@ -13,6 +13,17 @@ final class DiscordMessages {
     private static final String OMITTED = "…(일부 생략)";
     private static final Pattern RECORD_LINK = Pattern.compile("(?m)^🔗 \\[([^\\]]+)\\]\\(<(https://[^>]+)>\\)\\s*$");
 
+    static MessageEmbed account(String userId, String memberName) {
+        var card = new EmbedBuilder().setColor(0x5865F2).setTitle("👤 내 정보")
+                .setDescription("공부 기록에 사용할 계정 정보입니다.")
+                .addField("🆔 Discord 사용자 ID", "`" + userId + "`", false)
+                .addField("📚 연결된 Members 이름", memberName == null ? "미등록" : memberName, false);
+        if (memberName == null) {
+            card.addField("📌 계정 연결 안내", "관리자에게 위 사용자 ID와 연결할 Members 이름을 전달해주세요.", false);
+        }
+        return card.setFooter("본인에게만 표시됩니다").build();
+    }
+
     static List<ActionRow> buttons(String text) {
         if (!text.startsWith("✅") && !text.startsWith("⏳")) return List.of();
         var match = RECORD_LINK.matcher(text);

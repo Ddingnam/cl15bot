@@ -96,8 +96,26 @@ class DiscordStudyCommandsTests {
         verify(event).reply(contains("/st 입력:"));
         input("내정보");
         commands.onSlashCommandInteraction(event);
-        verify(event).reply(contains("Discord 사용자 ID: " + ID));
+        var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
+        verify(event).replyEmbeds(card.capture());
+        assertEquals("👤 내 정보", card.getValue().getTitle());
+        assertEquals("`" + ID + "`", card.getValue().getFields().get(0).getValue());
+        assertEquals("정명남", card.getValue().getFields().get(1).getValue());
+        assertEquals(2, card.getValue().getFields().size());
         verify(reply, times(2)).setEphemeral(true);
+        verifyNoInteractions(recording);
+        assertTrue(tasks.isEmpty());
+    }
+
+    @Test void unregisteredWhoamiShowsAccountInstructionsPrivatelyWithoutNotionCalls() {
+        when(user.getId()).thenReturn("745646325558935654");
+        input("whoami");
+        commands.onSlashCommandInteraction(event);
+        var card = ArgumentCaptor.forClass(net.dv8tion.jda.api.entities.MessageEmbed.class);
+        verify(event).replyEmbeds(card.capture());
+        assertEquals("미등록", card.getValue().getFields().get(1).getValue());
+        assertTrue(card.getValue().getFields().get(2).getValue().contains("관리자에게"));
+        verify(reply).setEphemeral(true);
         verifyNoInteractions(recording);
         assertTrue(tasks.isEmpty());
     }
