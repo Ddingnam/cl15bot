@@ -92,7 +92,16 @@ public class StudyCommandController {
             return ResponseEntity.ok(failureReply("Notion 연결 설정이 완료되지 않아 저장할 수 없습니다. 관리자에게 Notion 연결 설정 확인을 요청해주세요."));
         }
         // Local clients without a Mattermost callback receive the final result directly.
-        if (responseUrl.isBlank()) return process(entry);
+        if (responseUrl.isBlank()) {
+            try (var ticket = StudyRecordingService.taskQueue(recording).reserveManual(entry.memberName(), clock)) {
+                var result = new java.util.concurrent.atomic.AtomicReference<ResponseEntity<CommandResponse>>();
+                ticket.submit(Runnable::run, () -> result.set(process(entry)));
+                return result.get();
+            } catch (MemberStudyQueue.AdmissionException ex) { return ResponseEntity.ok(reply(ex.getMessage())); }
+            catch (RejectedExecutionException ex) {
+                return ResponseEntity.ok(failureReply("요청이 많아 접수하지 못했습니다. 저장하지 않았습니다. 잠시 후 다시 입력해주세요."));
+            }
+        }
         URI responseUri;
         try {
             responseUri = MattermostResponseSender.responseUri(responseUrl, properties.mattermostBaseUrl());
@@ -103,7 +112,8 @@ public class StudyCommandController {
         var receivedAt = clock.instant();
         try {
             log.info("Study request: requestId={} stage=accepting", requestId);
-            executor.execute(() -> {
+            var ticket = StudyRecordingService.taskQueue(recording).reserveManual(entry.memberName(), clock);
+            ticket.submit(executor, () -> {
                 try (var context = MDC.putCloseable("studyRequestId", requestId)) {
                     log.info("Study request: requestId={} stage=processing", requestId);
                     CommandResponse result;
@@ -123,6 +133,8 @@ public class StudyCommandController {
                 }
             });
             log.info("Study request: requestId={} stage=accepted", requestId);
+        } catch (MemberStudyQueue.AdmissionException ex) {
+            return ResponseEntity.ok(reply(ex.getMessage()));
         } catch (RejectedExecutionException ex) {
             log.warn("Study request: requestId={} stage=queue-rejected", requestId);
             return ResponseEntity.ok(failureReply("현재 처리 중인 요청이 많아 접수하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 다시 입력해주세요."));

@@ -4,7 +4,8 @@ services:
     runtime: docker
     branch: master
     region: singapore
-    plan: free
+    # Service Compute only; workspace billing is configured separately in Render.
+    plan: 0.5c-512mb
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: commit

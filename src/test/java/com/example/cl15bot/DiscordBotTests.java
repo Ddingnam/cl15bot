@@ -32,6 +32,7 @@ class DiscordBotTests {
         clock.set("2026-10-13T10:00:00Z");
         bot = new DiscordBot(new DiscordProperties("", GUILD, "{\"" + ID + "\":\"정명남\"}"),
                 new BotProperties("", "notion", "study", "스터디", "members"), recording, clock, Runnable::run);
+        bot.initialize(new DiscordMemberMapping("{\"" + ID + "\":\"정명남\"}"));
         when(jda.getGuildById(GUILD)).thenReturn(guild);
         when(guild.getId()).thenReturn(GUILD);
         when(guild.upsertCommand(any(net.dv8tion.jda.api.interactions.commands.build.CommandData.class)))

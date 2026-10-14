@@ -23,6 +23,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.ResourceAccessException;
 
 class StudyAsyncResponseTests {
+    @Test void repeatedMemberRequestIsRejectedBeforeItOccupiesExecutor() throws Exception {
+        var mvc = mvc(queue::add);
+        mvc.perform(request("1013 1900 2000 Java", CALLBACK)).andExpect(status().isOk());
+        mvc.perform(request("1013 1900 2000 Java", CALLBACK))
+                .andExpect(jsonPath("$.text").value(MemberStudyQueue.BUSY));
+        assertEquals(1, queue.size());
+        verifyNoInteractions(notion, members);
+    }
     private static final String CALLBACK = "https://mm.example.com/hooks/commands/callback123";
     private static final String LINK = "https://www.notion.so/00000000000000000000000000000001";
     private final NotionStudyClient notion = mock(NotionStudyClient.class);

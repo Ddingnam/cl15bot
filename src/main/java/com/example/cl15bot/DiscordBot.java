@@ -3,7 +3,7 @@ package com.example.cl15bot;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import jakarta.annotation.PostConstruct;
@@ -39,9 +39,13 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(DiscordBot.class);
     private final DiscordProperties properties;
     private final BotProperties notionProperties;
-    private final DiscordStudySessions sessions;
-    private final DiscordStudyCommands commands;
-    private final ExecutorService loginExecutor = Executors.newSingleThreadExecutor(task -> {
+    private DiscordStudySessions sessions;
+    private DiscordStudyCommands commands;
+    private final StudyRecordingService recording;
+    private final Clock clock;
+    private final Executor executor;
+    private int loginFailures;
+    private final ScheduledExecutorService loginExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
         Thread thread = new Thread(task, "discord-login");
         thread.setDaemon(true);
         return thread;
@@ -57,11 +61,15 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
             StudyRecordingService recording, Clock clock, @Qualifier("studyExecutor") Executor executor) {
         this.properties = properties;
         this.notionProperties = notionProperties;
-        var mapping = new DiscordMemberMapping(properties.memberMappings());
+        this.recording = recording; this.clock = clock; this.executor = executor;
+        // Safe inert listeners keep lifecycle/event methods usable before validation.
+        initialize(new DiscordMemberMapping("{}"));
+    }
+
+    void initialize(DiscordMemberMapping mapping) {
         commands = new DiscordStudyCommands(properties, notionProperties, mapping, recording, clock, executor,
-                this::sendDm, tasks);
-        sessions = new DiscordStudySessions(mapping,
-                recording, clock, tasks.executor(executor), this::sendDm);
+                this::sendDm, tasks, this::scheduleRetry);
+        sessions = new DiscordStudySessions(mapping, recording, clock, executor, this::sendDm, tasks);
     }
 
     @PostConstruct
@@ -72,14 +80,16 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
             log.info("Discord disabled: DISCORD_BOT_TOKEN is empty");
             return;
         }
-        if (properties.guildId() == null || !properties.guildId().matches("[0-9]{17,20}")) {
-            throw new IllegalArgumentException("DISCORD_GUILD_ID에 대상 서버 ID를 입력해주세요.");
-        }
-        if (!notionProperties.hasNotionConfiguration()) {
-            throw new IllegalArgumentException("Discord 실행 전에 Notion 토큰과 두 데이터 소스 ID를 설정해주세요.");
-        }
         synchronized (lifecycleLock) {
             if (stopping || !loginStarted.compareAndSet(false, true)) return;
+            try {
+                if (properties.guildId() == null || !properties.guildId().matches("[0-9]{17,20}")
+                        || !notionProperties.hasNotionConfiguration()) throw new IllegalArgumentException();
+                initialize(new DiscordMemberMapping(properties.memberMappings()));
+            } catch (IllegalArgumentException ex) {
+                log.error("Discord configuration invalid; Discord stopped, MM remains available. Check guild ID, member mappings and Notion settings");
+                return;
+            }
             // JDA verifies the token with a blocking REST call inside build(). A long
             // rate-limit wait must not prevent Tomcat from binding Render's PORT.
             loginExecutor.execute(this::connect);
@@ -96,8 +106,17 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
             }
         } catch (RuntimeException ex) {
             // Do not log exception messages, credentials, or HTTP response bodies.
-            log.error("Discord login failed; web service remains available. Check bot token and Discord access. type={}",
-                    ex.getClass().getSimpleName());
+            if (stopping) return;
+            long delay = DiscordRetry.delay(ex, loginFailures++);
+            log.warn("Discord login failed; web service remains available. type={} retryMs={}", ex.getClass().getSimpleName(), delay);
+            if (delay >= 0) scheduleRetry(this::connect, delay);
+        }
+    }
+
+    void scheduleRetry(Runnable task, long delayMillis) {
+        synchronized (lifecycleLock) {
+            if (!stopping) loginExecutor.schedule(() -> { if (!stopping) task.run(); }, delayMillis,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
         }
     }
 

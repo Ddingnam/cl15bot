@@ -24,6 +24,8 @@ public class DiscordStudySessions {
     private final Clock clock;
     private final Executor executor;
     private final BiConsumer<String, String> dm;
+    private final MemberStudyQueue taskQueue;
+    private final DiscordTasks tasks;
     private final Map<String, Session> active = new HashMap<>();
     private final Set<String> notified = new HashSet<>();
     private boolean connected;
@@ -35,11 +37,18 @@ public class DiscordStudySessions {
 
     public DiscordStudySessions(DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock,
             Executor executor, BiConsumer<String, String> dm) {
+        this(mapping, recording, clock, executor, dm, new DiscordTasks());
+    }
+
+    DiscordStudySessions(DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock,
+            Executor executor, BiConsumer<String, String> dm, DiscordTasks tasks) {
         this.mapping = mapping;
         this.recording = recording;
         this.clock = clock;
         this.executor = executor;
         this.dm = dm;
+        this.tasks = tasks;
+        this.taskQueue = StudyRecordingService.taskQueue(recording);
     }
 
     public synchronized void ready(Iterable<Occupant> occupants) {
@@ -112,10 +121,15 @@ public class DiscordStudySessions {
     }
 
     private void submit(String userId, Runnable task) {
-        try { executor.execute(task); }
-        catch (RejectedExecutionException ex) {
+        Runnable complete = tasks.begin();
+        Runnable rejected = () -> {
+            try {
             log.warn("Discord study queue full; task not accepted");
             dm.accept(userId, "⚠️ 처리 대기열이 가득 차 기록 작업을 접수하지 못했습니다. Notion 확인 후 수동 처리해주세요.");
-        }
+            } finally { complete.run(); }
+        };
+        try { taskQueue.automatic(mapping.nameFor(userId).orElse("unregistered:" + userId), executor,
+                () -> { try { task.run(); } finally { complete.run(); } }, rejected); }
+        catch (RejectedExecutionException ex) { rejected.run(); }
     }
 }

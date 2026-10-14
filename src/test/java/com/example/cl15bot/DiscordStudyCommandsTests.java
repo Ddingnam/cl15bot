@@ -202,6 +202,11 @@ class DiscordStudyCommandsTests {
     }
 
     @Test void registrationUpsertsOnlyStWithOptionalTextAndRetriesOnFailure() {
+        var retries = new ArrayList<Runnable>();
+        commands = new DiscordStudyCommands(new DiscordProperties("", GUILD, ""),
+                new BotProperties("mm", "notion", "study", "스터디", "members"),
+                new DiscordMemberMapping("{}"), recording, Clock.systemUTC(), tasks::add,
+                dm, new DiscordTasks(), (task, delay) -> { assertEquals(30_000L, delay); retries.add(task); });
         var action = mock(CommandCreateAction.class);
         when(guild.upsertCommand(any(CommandData.class))).thenReturn(action);
         commands.register(guild);
@@ -217,8 +222,10 @@ class DiscordStudyCommandsTests {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Consumer<Throwable>> failure = ArgumentCaptor.forClass(Consumer.class);
         verify(action).queue(any(), failure.capture());
-        failure.getValue().accept(new IllegalStateException());
+        failure.getValue().accept(new java.io.IOException());
         commands.register(guild);
+        verify(guild, times(1)).upsertCommand(any(CommandData.class));
+        retries.getFirst().run();
         verify(guild, times(2)).upsertCommand(any(CommandData.class));
     }
 

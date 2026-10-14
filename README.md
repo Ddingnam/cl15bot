@@ -122,3 +122,9 @@ MM callback 연결 제한은 3초, 응답 제한은 5초입니다. 2xx만 전달
 Render Free는 요청이 15분간 없으면 절전할 수 있습니다. 초기 기동 지연은 비동기 처리로 해결되지 않습니다. 테스트 전 health UP을 확인합니다. Maven Central 다운로드 429와 Notion API 429는 별개입니다.
 
 MM 작업은 requestId로 stage=accepting, accepted, processing, save-completed, result-ready, delivery-completed 로그를 연결합니다. queue-rejected와 Mattermost final response delivery failed는 접수 실패·메시지 전달 실패입니다. Notion 오류 stage=members-query, study-schema, overlap-query, study-save와 예외 타입도 확인합니다. 처리 완료 로그는 영구 작업 기록이 아니며 비정상 종료 후 자동 복구는 지원하지 않습니다. 토큰·callback URL·사용자 입력은 로그에 적지 않습니다.
+
+## 접수 제한과 Discord 복구
+
+MM과 Discord 수동 등록은 연결된 Members 이름 기준으로 진행 중 요청 하나만 허용하며, 멤버당 1분에 최대 5회 접수합니다. 같은 멤버의 중복 요청은 작업 스레드를 차지하기 전에 안내합니다. Discord 음성 기록은 수동 등록 뒤에서 멤버별로 순서대로 처리하며 측정 구간을 메모리에 보관합니다. 대기열은 전체 200건, 멤버당 8건으로 제한하고 포화 시 로그와 수동 확인 안내를 남깁니다. 영구 작업 복구는 포함하지 않습니다.
+
+Discord 설정 검증은 Discord 시작 단계에서 수행합니다. 잘못된 서버 ID·계정 매핑·연결 설정은 Discord만 중단하고 MM 웹 기동을 유지합니다. 최초 로그인과 /st 등록의 일시적 네트워크·서버 오류는 30초 → 1분 → 2분 → 5분 간격으로 재시도하며, 요청 제한이 더 길면 그 대기시간을 따릅니다. 설정·인증·권한 오류는 반복하지 않습니다. 진행 중 로그인은 중복 실행하지 않고 종료 시 예약된 재시도도 취소합니다. 연결된 이후 Gateway 재연결은 JDA가 담당합니다.

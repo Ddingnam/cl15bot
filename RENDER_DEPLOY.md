@@ -1,6 +1,6 @@
 # Render 배포와 MM 공부 명령 연결
 
-기존 서비스를 사용하며 중복 생성하지 않습니다. 새 서비스 설정은 Ddingnam/cl15bot, master, Docker, Singapore, Free, Health Check Path `/actuator/health`, Auto Deploy On Commit입니다. Build/Start/Docker Command는 별도로 덮어쓰지 않습니다.
+기존 서비스를 사용하며 중복 생성하지 않습니다. 새 서비스 설정은 Ddingnam/cl15bot, master, Docker, Singapore, 0.5 CPU·512 MB Compute, Health Check Path `/actuator/health`, Auto Deploy On Commit입니다. Build/Start/Docker Command는 별도로 덮어쓰지 않습니다. `render.yaml`은 서비스 Compute만 지정하는 `plan: 0.5c-512mb`로 맞춥니다. 워크스페이스 요금제는 별도입니다. Blueprint를 쓰지 않는 기존 서비스는 Render 화면 설정이 적용되며 파일 변경만으로 결제나 플랜 변경을 요청하지 않습니다.
 
 ## Environment
 

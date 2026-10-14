@@ -9,6 +9,45 @@ import net.dv8tion.jda.api.JDA;
 import org.junit.jupiter.api.Test;
 
 class DiscordStartupTests {
+    @Test void invalidDiscordMappingDoesNotAbortSharedApplicationContext() {
+        try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
+            context.registerBean("mmAvailable", String.class, () -> "ready");
+            context.registerBean(DiscordBot.class, () -> new DiscordBot(
+                    new DiscordProperties("token", "123456789012345678", "invalid-json"),
+                    new BotProperties("mm", "notion", "study", "title", "members"),
+                    mock(StudyRecordingService.class), Clock.systemUTC(), Runnable::run));
+            assertDoesNotThrow(context::refresh);
+            assertEquals("ready", context.getBean("mmAvailable"));
+        }
+    }
+
+    @Test void transientInitialLoginRetriesWithoutASecondSimultaneousLogin() throws Exception {
+        var bot = bot("test-token");
+        var retry = new java.util.concurrent.LinkedBlockingQueue<Runnable>();
+        var client = mock(JDA.class);
+        doAnswer(call -> {
+            assertEquals(30_000L, call.<Long>getArgument(1));
+            retry.add(call.getArgument(0)); return null;
+        }).when(bot).scheduleRetry(any(), anyLong());
+        doThrow(new net.dv8tion.jda.api.exceptions.HttpException("temporary", new java.io.IOException()))
+                .doReturn(client).when(bot).buildClient();
+        try {
+            bot.start();
+            var next = retry.poll(2, TimeUnit.SECONDS);
+            assertNotNull(next);
+            bot.start();
+            verify(bot, times(1)).buildClient();
+            next.run();
+            verify(bot, times(2)).buildClient();
+            assertSame(client, org.springframework.test.util.ReflectionTestUtils.getField(bot, "jda"));
+        } finally { bot.stop(); }
+    }
+
+    @Test void stoppedBotDoesNotScheduleMoreRetries() {
+        var bot = bot("");
+        bot.start(); bot.stop();
+        assertDoesNotThrow(() -> bot.scheduleRetry(() -> fail("Ran after shutdown"), 0));
+    }
     private DiscordBot bot(String token) {
         return spy(new DiscordBot(new DiscordProperties(token, "123456789012345678", "{}"),
                 new BotProperties("", "notion", "study", "스터디", "members"),
@@ -79,6 +118,7 @@ class DiscordStartupTests {
         var bot = new DiscordBot(new DiscordProperties("", "123456789012345678", "{\"414964289770881035\":\"member\"}"),
                 new BotProperties("", "notion", "study", "title", "members"), recording, clock, queue::add);
         var client = mock(JDA.class);
+        bot.initialize(new DiscordMemberMapping("{\"414964289770881035\":\"member\"}"));
         org.springframework.test.util.ReflectionTestUtils.setField(bot, "jda", client);
         var sessions = (DiscordStudySessions) org.springframework.test.util.ReflectionTestUtils.getField(bot, "sessions");
         sessions.ready(java.util.List.of(new DiscordStudySessions.Occupant("414964289770881035", "member", "voice")));

@@ -17,6 +17,10 @@ public class StudyRecordingService {
     private final NotionStudyClient notion;
     private final MemberRegistry members;
     private final NotionRetryPolicy retries;
+    private final MemberStudyQueue taskQueue = new MemberStudyQueue();
+    static MemberStudyQueue taskQueue(StudyRecordingService recording) {
+        return recording.taskQueue == null ? new MemberStudyQueue() : recording.taskQueue;
+    }
     private final Object[] memberLocks = new Object[64];
 
     public StudyRecordingService(BotProperties properties, NotionStudyClient notion, MemberRegistry members) {

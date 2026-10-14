@@ -42,7 +42,7 @@ discord:
 
 Java 21로 실행한다. `Discord study tracking ready` 로그로 연결·대상 서버 확인을 한다. `/actuator/health`의 UP만으로 Discord 연결이나 Notion 저장 성공을 판단하지 않는다.
 
-Discord 로그인은 별도 스레드에서 진행되므로 로그인 대기 중에도 웹 서버와 MM은 실행된다. `Encountered cloudflare rate limit`과 `Retry-After`가 나오면 SDK가 지정된 시간만큼 기다린다. 반복 재시작·배포로 재접속을 강제하지 말고 연결 준비 로그를 확인한다. 인증 실패 등으로 `Discord login failed`가 나오면 해당 원인을 수정한 뒤 재시작한다. 웹 서비스의 Live 상태와 Discord 온라인 상태는 별개다.
+Discord 로그인은 별도 스레드에서 진행되므로 로그인 대기 중에도 웹 서버와 MM은 실행된다. `Encountered cloudflare rate limit`과 `Retry-After`가 나오면 SDK가 지정된 시간만큼 기다린다. 반복 재시작·배포로 재접속을 강제하지 말고 연결 준비 로그를 확인한다. 설정·인증·권한 오류는 해당 원인을 수정한 뒤 재시작한다. 일시적인 최초 로그인·명령 등록 실패는 30초, 1분, 2분, 이후 5분 간격으로 재시도하며 Discord 오류가 MM 기동을 막지 않도록 분리한다. 웹 서비스의 Live 상태와 Discord 온라인 상태는 별개다.
 
 등록된 계정으로 3분 이상 입장한 뒤 연결 해제하면 `모각코` 한 행과 DM이 생성된다. 다른 일반 음성 채널로 이동하거나 음소거해도 시작 시각은 유지된다. 3분 미만은 저장·DM 없이 제외한다. 자정에 분리하지 않고 시작일에 귀속한다. 2026년 내 최대 24시간 규칙과 기존 겹침 검사를 적용한다.
 

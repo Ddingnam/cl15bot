@@ -28,6 +28,10 @@ public class DiscordStudyCommands extends ListenerAdapter {
     private final Executor executor;
     private final BiConsumer<String, String> dm;
     private final DiscordTasks tasks;
+    private final MemberStudyQueue taskQueue;
+    private final BiConsumer<Runnable, Long> retryScheduler;
+    private int registrationFailures;
+    private volatile Guild registrationGuild;
     private volatile boolean stopping;
     private final AtomicBoolean registrationStarted = new AtomicBoolean();
 
@@ -40,6 +44,12 @@ public class DiscordStudyCommands extends ListenerAdapter {
     DiscordStudyCommands(DiscordProperties properties, BotProperties notionProperties,
             DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock, Executor executor,
             BiConsumer<String, String> dm, DiscordTasks tasks) {
+        this(properties, notionProperties, mapping, recording, clock, executor, dm, tasks, (task, delay) -> {});
+    }
+
+    DiscordStudyCommands(DiscordProperties properties, BotProperties notionProperties,
+            DiscordMemberMapping mapping, StudyRecordingService recording, Clock clock, Executor executor,
+            BiConsumer<String, String> dm, DiscordTasks tasks, BiConsumer<Runnable, Long> retryScheduler) {
         this.properties = properties;
         this.notionProperties = notionProperties;
         this.mapping = mapping;
@@ -48,18 +58,33 @@ public class DiscordStudyCommands extends ListenerAdapter {
         this.executor = tasks.executor(executor);
         this.dm = dm;
         this.tasks = tasks;
+        this.taskQueue = StudyRecordingService.taskQueue(recording);
+        this.retryScheduler = retryScheduler;
     }
 
     public void register(Guild guild) {
-        if (!guild.getId().equals(properties.guildId()) || !registrationStarted.compareAndSet(false, true)) return;
+        if (stopping || !guild.getId().equals(properties.guildId())) return;
+        registrationGuild = guild;
+        if (!registrationStarted.compareAndSet(false, true)) return;
+        try {
         // Upsert only /st; do not delete other application commands.
         guild.upsertCommand(Commands.slash("st", "2026년 공부 기록 · 본인에게만 결과 표시")
                 .addOptions(new OptionData(OptionType.STRING, "입력",
                         "MMDD 시작HHmm [종료MMDD] 종료HHmm 공부내용 / 도움말 / 내정보", false).setMaxLength(2000)))
-                .queue(command -> log.info("Discord /st command registered"), failure -> {
-                    registrationStarted.set(false);
-                    log.warn("Discord /st registration failed: type={}", failure.getClass().getSimpleName());
-                });
+                .queue(command -> log.info("Discord /st command registered"), failure -> registrationFailed(guild, failure));
+        } catch (RuntimeException ex) { registrationFailed(guild, ex); }
+    }
+
+    private void registrationFailed(Guild guild, Throwable failure) {
+        if (stopping) return;
+        long delay = DiscordRetry.delay(failure, registrationFailures++);
+        log.warn("Discord /st registration failed: type={} retryMs={}", failure.getClass().getSimpleName(), delay);
+        if (delay < 0) return;
+        retryScheduler.accept(() -> {
+            if (stopping) return;
+            registrationStarted.set(false);
+            register(registrationGuild);
+        }, delay);
     }
 
     @Override public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
@@ -104,6 +129,10 @@ public class DiscordStudyCommands extends ListenerAdapter {
             return;
         }
         // ACK before any Notion calls; all edits retain the original ephemeral visibility.
+        MemberStudyQueue.Ticket ticket;
+        try { ticket = taskQueue.reserveManual(entry.memberName(), clock); }
+        catch (MemberStudyQueue.AdmissionException ex) { reply(event, ex.getMessage()); return; }
+        catch (RejectedExecutionException ex) { reply(event, "⚠️ 요청이 많아 접수하지 못했습니다. 저장하지 않았습니다."); return; }
         Runnable acknowledged = tasks.begin();
         try {
             String processing = processing();
@@ -111,18 +140,20 @@ public class DiscordStudyCommands extends ListenerAdapter {
                     .setEphemeral(true).setAllowedMentions(List.of()).queue(hook -> {
                 try {
                     if (stopping) throw new RejectedExecutionException();
-                    executor.execute(() -> {
+                    ticket.submit(executor, () -> {
                         var response = recording.processDiscord(entry, receivedAt, clock).getBody();
                         if (response != null) edit(hook, userId, response.text());
                     });
                 } catch (RejectedExecutionException ex) {
                     edit(hook, userId, "⚠️ 현재 요청을 접수하지 못했습니다. 저장 요청을 보내지 않았습니다. 잠시 후 다시 입력해주세요.");
-                } finally { acknowledged.run(); }
+                } finally { ticket.close(); acknowledged.run(); }
             }, failure -> {
                 log.warn("Discord command acknowledgment failed; no save started: type={}", failure.getClass().getSimpleName());
+                ticket.close();
                 acknowledged.run();
             });
         } catch (RuntimeException ex) {
+            ticket.close();
             acknowledged.run();
             log.warn("Discord command acknowledgment failed; no save started: type={}", ex.getClass().getSimpleName());
         }
