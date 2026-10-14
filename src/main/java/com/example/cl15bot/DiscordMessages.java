@@ -12,13 +12,12 @@ final class DiscordMessages {
     private static final int LIMIT = 2000;
     private static final String OMITTED = "…(일부 생략)";
     private static final String FOOTER = "결과는 본인에게만 표시됩니다";
-    // Discord trims empty lines; a zero-width character preserves intentional spacing.
-    private static final String GAP = "\n\n\u200B\n\n";
+    private static final String GAP = "\n\n";
     private static final Pattern RECORD_LINK = Pattern.compile("(?m)^🔗 \\[([^\\]]+)\\]\\(<(https://[^>]+)>\\)\\s*$");
 
     static MessageEmbed help() {
         return new EmbedBuilder().setColor(0x5865F2).setTitle("📖 공부 기록 사용법")
-                .setDescription("\u200B\n\n" + spaced(
+                .setDescription(spaced(
                         "`/st` 선택 → `입력` 옵션 선택 → 공부 내용 입력",
                         "**• 같은 날**\n`" + StudyEntry.EXAMPLE.replace("예: ", "") + "`\n"
                                 + "날짜 · 시작 시각 · 종료 시각 · 공부 내용",
@@ -43,7 +42,7 @@ final class DiscordMessages {
     }
 
     private static String spaced(String... blocks) {
-        return String.join(GAP, blocks) + "\n\n\u200B";
+        return String.join(GAP, blocks);
     }
 
     static List<ActionRow> buttons(String text) {
@@ -61,7 +60,7 @@ final class DiscordMessages {
             String description = RECORD_LINK.matcher(text.substring(text.indexOf('\n') + 1)).replaceAll("").strip();
             description = description.replace("이미 저장됐을 수 있으니 확인 전에는", "이미 저장됐을 수 있으니\n확인 전에는");
             return new EmbedBuilder().setColor(0xF2C94C).setTitle("⏳ 기록 저장 중")
-                    .setDescription("\u200B\n\n" + spaced(description.split("\n\n")))
+                    .setDescription(spaced(description.split("\n\n")))
                     .setFooter(FOOTER).build();
         }
         if (!text.startsWith("✅")) return null;
@@ -77,7 +76,7 @@ final class DiscordMessages {
             }
         }
         return new EmbedBuilder().setColor(0x49B98A).setTitle("✅ 공부 기록 완료")
-                .setDescription("\u200B\n\n" + spaced(blocks.toArray(String[]::new)))
+                .setDescription(spaced(blocks.toArray(String[]::new)))
                 .setFooter(FOOTER).build();
     }
     static String bounded(String text) {

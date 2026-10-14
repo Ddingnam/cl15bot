@@ -104,12 +104,12 @@ class DiscordStudyCommandsTests {
         assertTrue(help.getDescription().contains("`/st 1013 1900 2030 Java 복습`"));
         assertTrue(help.getDescription().contains("`/st 1013 2300 1014 0100 Java 복습`"));
         assertTrue(help.getDescription().contains("`/st 내정보`"));
-        assertTrue(help.getDescription().contains("\n\n\u200B\n\n"));
+        assertTrue(help.getDescription().contains("\n\n"));
         assertNull(info.getTitle());
         assertFalse(info.getDescription().contains("공부 기록에 사용할 계정 정보"));
         assertTrue(info.getDescription().contains("`" + ID + "`"));
         assertTrue(info.getDescription().contains("정명남"));
-        assertTrue(info.getDescription().contains("\n\n\u200B\n\n"));
+        assertTrue(info.getDescription().contains("\n\n"));
         assertEquals("결과는 본인에게만 표시됩니다", info.getFooter().getText());
         verify(reply, times(2)).setEphemeral(true);
         verifyNoInteractions(recording);

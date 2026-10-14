@@ -51,7 +51,7 @@ class DiscordSafetyTests {
         assertEquals("✅ 공부 기록 완료", card.getTitle());
         assertTrue(card.getDescription().length() <= 4096);
         assertTrue(card.getDescription().contains("…(일부 생략)"));
-        assertTrue(card.getDescription().contains("\n\n\u200B\n\n"));
+        assertTrue(card.getDescription().contains("\n\n"));
         assertEquals("결과는 본인에게만 표시됩니다", card.getFooter().getText());
         assertEquals(URL, DiscordMessages.buttons(result).getFirst().getButtons().getFirst().getUrl());
         for (int i = 0; i < result.length(); i++) {
