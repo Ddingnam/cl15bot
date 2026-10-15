@@ -18,6 +18,8 @@ class DiscordStudySessionsTests {
     private final MutableClock clock = new MutableClock();
     private final StudyRecordingService recording = mock(StudyRecordingService.class);
     private final List<String> messages = new ArrayList<>();
+    private final List<Runnable> recoveryTimers = new ArrayList<>();
+    private int cancelledTimers;
     private DiscordStudySessions sessions;
     private final DiscordStudySessions.Occupant user = new DiscordStudySessions.Occupant(ID, "jmn", "channel-a");
 
@@ -25,7 +27,12 @@ class DiscordStudySessionsTests {
         when(recording.processDiscordAutomatic(any())).thenReturn(ResponseEntity.ok(
                 new StudyCommandController.CommandResponse("ephemeral", "✅ 저장했습니다.")));
         sessions = new DiscordStudySessions(new DiscordMemberMapping("{\"" + ID + "\":\"정명남\"}"),
-                recording, clock, Runnable::run, (id, message) -> messages.add(message));
+                recording, clock, Runnable::run, (id, message) -> messages.add(message), new DiscordTasks(),
+                (task, delay) -> {
+                    assertEquals(120_000L, delay);
+                    recoveryTimers.add(task);
+                    return () -> cancelledTimers++;
+                });
         clock.set("2026-10-13T10:00:50Z");
         sessions.ready(List.of());
     }
@@ -90,14 +97,19 @@ class DiscordStudySessionsTests {
         verifyNoInteractions(recording);
     }
 
-    @Test void cutsAtLastHeartbeatAndStartsFreshAfterReconnect() {
+    @Test void timeoutCutsAtLastHeartbeatAndStartsFreshAfterReconnect() {
         sessions.update(user, true);
         clock.set("2026-10-13T10:04:00Z");
         sessions.checkpoint();
         clock.set("2026-10-13T10:10:00Z");
         sessions.disconnected();
         sessions.disconnected();
-        sessions.update(user, true); // replay while disconnected must be ignored
+        verifyNoInteractions(recording);
+        assertEquals(1, recoveryTimers.size());
+        clock.set("2026-10-13T10:12:00Z");
+        recoveryTimers.getFirst().run();
+        recoveryTimers.getFirst().run(); // cannot save twice
+        sessions.update(user, true); // expired recovery must not restart from replay
         clock.set("2026-10-13T10:20:00Z");
         sessions.ready(List.of(user));
         clock.set("2026-10-13T10:24:00Z");
@@ -106,6 +118,142 @@ class DiscordStudySessionsTests {
         verify(recording, times(2)).processDiscordAutomatic(entries.capture());
         assertEquals(4, entries.getAllValues().get(0).endTime().getMinute());
         assertEquals(20, entries.getAllValues().get(1).startTime().getMinute());
+        assertTrue(messages.getFirst().contains("봇 연결 장애"));
+    }
+
+    @Test void shortResumeKeepsOriginalStartAndCancelsTimeout() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:01Z");
+        sessions.ready(List.of(user), true);
+        verifyNoInteractions(recording);
+        assertEquals(1, cancelledTimers);
+        clock.set("2026-10-13T10:10:00Z");
+        recoveryTimers.getFirst().run();
+        sessions.update(user, false);
+        sessions.update(user, false);
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(10, entry.getValue().minutes());
+        assertEquals(0, entry.getValue().startTime().getMinute());
+        assertFalse(messages.getFirst().contains("봇 연결 장애"));
+    }
+
+    @Test void recreatedSessionRetainsSameRoomAndEndsMissingOccupantConservatively() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:01Z");
+        sessions.ready(List.of(user));
+        verifyNoInteractions(recording);
+        clock.set("2026-10-13T10:08:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:08:01Z");
+        sessions.ready(List.of());
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(8, entry.getValue().minutes());
+        assertTrue(messages.getFirst().contains("봇 연결 장애"));
+    }
+
+    @Test void resumedDepartureAndRejoinAreReplayedInOrderInsteadOfMerged() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:10Z");
+        sessions.update(user, false);
+        clock.set("2026-10-13T10:04:20Z");
+        sessions.update(user, true);
+        verifyNoInteractions(recording);
+        sessions.ready(List.of(user), true);
+        clock.set("2026-10-13T10:08:00Z");
+        sessions.update(user, false);
+        var entries = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording, times(2)).processDiscordAutomatic(entries.capture());
+        assertEquals(4, entries.getAllValues().get(0).minutes());
+        assertEquals(4, entries.getAllValues().get(1).startTime().getMinute());
+    }
+
+    @Test void resumedMoveKeepsStartWhileRecreatedDifferentRoomStartsFresh() {
+        var moved = new DiscordStudySessions.Occupant(ID, "jmn", "channel-b");
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:01Z");
+        sessions.update(moved, true);
+        sessions.ready(List.of(moved), true);
+        clock.set("2026-10-13T10:08:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:08:01Z");
+        sessions.ready(List.of(user));
+        clock.set("2026-10-13T10:12:00Z");
+        sessions.update(user, false);
+        var entries = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording, times(2)).processDiscordAutomatic(entries.capture());
+        assertEquals(8, entries.getAllValues().get(0).minutes());
+        assertEquals(8, entries.getAllValues().get(1).startTime().getMinute());
+    }
+
+    @Test void recreatedSessionDoesNotTrustBufferedEventsFromIncompleteCache() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:01Z");
+        sessions.update(user, false);
+        sessions.ready(List.of(user), false);
+        verifyNoInteractions(recording);
+        clock.set("2026-10-13T10:10:00Z");
+        sessions.update(user, false);
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(10, entry.getValue().minutes());
+    }
+
+    @Test void overdueRecoveryExpiresEvenWhenTimerIsDelayed() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:06:00Z");
+        sessions.ready(List.of(user), true);
+        clock.set("2026-10-13T10:10:00Z");
+        recoveryTimers.getFirst().run();
+        sessions.update(user, false);
+        var entries = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording, times(2)).processDiscordAutomatic(entries.capture());
+        assertEquals(4, entries.getAllValues().get(0).endTime().getMinute());
+        assertEquals(6, entries.getAllValues().get(1).startTime().getMinute());
+    }
+
+    @Test void oldTimeoutCannotExpireANewerDisconnectAndStopFlushesOnce() {
+        sessions.update(user, true);
+        clock.set("2026-10-13T10:04:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:04:01Z");
+        sessions.ready(List.of(user), true);
+        clock.set("2026-10-13T10:05:00Z");
+        sessions.checkpoint();
+        sessions.disconnected();
+        clock.set("2026-10-13T10:06:00Z");
+        recoveryTimers.getFirst().run();
+        verifyNoInteractions(recording);
+        sessions.stop();
+        sessions.stop();
+        clock.set("2026-10-13T10:08:00Z");
+        recoveryTimers.get(1).run();
+        sessions.ready(List.of(user));
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(5, entry.getValue().endTime().getMinute());
     }
 
     @Test void overlapReportsMeasuredPeriodAndDoesNotRetry() {

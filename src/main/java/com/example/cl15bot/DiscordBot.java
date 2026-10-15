@@ -22,6 +22,7 @@ import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.events.session.SessionRecreateEvent;
 import net.dv8tion.jda.api.events.session.SessionResumeEvent;
+import net.dv8tion.jda.api.events.session.SessionDisconnectEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
@@ -69,7 +70,8 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
     void initialize(DiscordMemberMapping mapping) {
         commands = new DiscordStudyCommands(properties, notionProperties, mapping, recording, clock, executor,
                 this::sendDm, tasks, this::scheduleRetry);
-        sessions = new DiscordStudySessions(mapping, recording, clock, executor, this::sendDm, tasks);
+        sessions = new DiscordStudySessions(mapping, recording, clock, executor, this::sendDm, tasks,
+                this::scheduleRecovery);
     }
 
     @PostConstruct
@@ -120,6 +122,18 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
         }
     }
 
+    private Runnable scheduleRecovery(Runnable task, Long delayMillis) {
+        // Do not acquire lifecycleLock while holding the sessions monitor: stop()
+        // acquires these locks in the opposite order.
+        try {
+            var future = loginExecutor.schedule(task, delayMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+            return () -> future.cancel(false);
+        } catch (java.util.concurrent.RejectedExecutionException ex) {
+            if (!stopping) throw ex;
+            return () -> {};
+        }
+    }
+
     JDA buildClient() {
         return JDABuilder.createLight(properties.botToken(), GatewayIntent.GUILD_VOICE_STATES)
                 .setMemberCachePolicy(MemberCachePolicy.VOICE)
@@ -131,8 +145,23 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
     }
 
     @Override public void onReady(ReadyEvent event) { reconcile(event.getJDA()); }
-    @Override public void onSessionResume(SessionResumeEvent event) { reconcile(event.getJDA()); }
-    @Override public void onSessionRecreate(SessionRecreateEvent event) { reconcile(event.getJDA()); }
+    @Override public void onSessionResume(SessionResumeEvent event) {
+        log.info("Discord gateway session resumed");
+        reconcile(event.getJDA(), true);
+    }
+    @Override public void onSessionRecreate(SessionRecreateEvent event) {
+        log.info("Discord gateway session recreated");
+        reconcile(event.getJDA());
+    }
+    @Override public void onSessionDisconnect(SessionDisconnectEvent event) {
+        var server = event.getServiceCloseFrame();
+        var client = event.getClientCloseFrame();
+        var code = event.getCloseCode();
+        // Close reasons can contain external text; record numeric codes only.
+        log.warn("Discord gateway disconnected: closedByServer={} closeCode={} serverCode={} clientCode={}",
+                event.isClosedByServer(), code == null ? null : code.getCode(),
+                server == null ? null : server.getCloseCode(), client == null ? null : client.getCloseCode());
+    }
     @Override public void onGuildJoin(GuildJoinEvent event) {
         if (event.getGuild().getId().equals(properties.guildId())) reconcile(event.getJDA());
     }
@@ -147,10 +176,18 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
     }
 
     private void reconcile(JDA client) {
+        reconcile(client, false);
+    }
+
+    private void reconcile(JDA client, boolean resumed) {
         if (stopping) return;
         Guild guild = client.getGuildById(properties.guildId());
         if (guild == null) {
             log.error("Discord target guild unavailable; verify guild ID and bot invitation");
+            return;
+        }
+        if (client.isUnavailable(Long.parseLong(properties.guildId()))) {
+            log.warn("Discord target guild temporarily unavailable; study recovery remains suspended");
             return;
         }
         commands.register(guild);
@@ -161,7 +198,7 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
                         member.getId(), member.getUser().getName(), channel.getId()));
             }
         }
-        sessions.ready(occupants);
+        sessions.ready(occupants, resumed);
         log.info("Discord study tracking ready; current human voice occupants={}", occupants.size());
     }
 
@@ -181,9 +218,9 @@ public class DiscordBot extends ListenerAdapter implements SmartLifecycle {
 
     @Override public void onStatusChange(StatusChangeEvent event) {
         log.info("Discord connection status: {} -> {}", event.getOldStatus(), event.getNewStatus());
-        if (event.getOldStatus() == JDA.Status.CONNECTED && event.getNewStatus() != JDA.Status.CONNECTED) {
+        if (!stopping && event.getOldStatus() == JDA.Status.CONNECTED && event.getNewStatus() != JDA.Status.CONNECTED) {
             sessions.disconnected();
-            log.warn("Discord connection interrupted; sessions closed at last confirmed time");
+            log.warn("Discord connection interrupted; sessions retained pending recovery");
         }
     }
 

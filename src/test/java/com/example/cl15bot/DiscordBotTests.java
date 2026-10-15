@@ -11,6 +11,10 @@ import net.dv8tion.jda.api.events.guild.GuildAvailableEvent;
 import net.dv8tion.jda.api.events.guild.GuildUnavailableEvent;
 import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
+import net.dv8tion.jda.api.events.StatusChangeEvent;
+import net.dv8tion.jda.api.events.session.SessionResumeEvent;
+import net.dv8tion.jda.api.events.session.SessionRecreateEvent;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -27,6 +31,8 @@ class DiscordBotTests {
     private final DiscordStudySessionsTests.MutableClock clock = new DiscordStudySessionsTests.MutableClock();
     private DiscordBot bot;
     private Member member;
+
+    @AfterEach void stop() { bot.stop(); }
 
     @BeforeEach void setup() {
         clock.set("2026-10-13T10:00:00Z");
@@ -105,5 +111,76 @@ class DiscordBotTests {
         bot.onGuildVoiceUpdate(update);
         verifyNoInteractions(recording);
         verify(update, never()).getMember();
+    }
+
+    private void readyAndDisconnect() {
+        var ready = mock(ReadyEvent.class);
+        when(ready.getJDA()).thenReturn(jda);
+        bot.onReady(ready);
+        clock.set("2026-10-13T10:05:00Z");
+        bot.onGatewayPing(mock(net.dv8tion.jda.api.events.GatewayPingEvent.class));
+        var status = mock(StatusChangeEvent.class);
+        when(status.getOldStatus()).thenReturn(JDA.Status.CONNECTED);
+        when(status.getNewStatus()).thenReturn(JDA.Status.DISCONNECTED);
+        bot.onStatusChange(status);
+        verifyNoInteractions(recording);
+    }
+
+    private void depart() {
+        var departure = mock(GuildVoiceUpdateEvent.class);
+        when(departure.getGuild()).thenReturn(guild);
+        when(departure.getMember()).thenReturn(member);
+        bot.onGuildVoiceUpdate(departure);
+    }
+
+    @Test void gatewayResumeReflectsReplayedDepartureWithoutWaitingForTimeout() {
+        readyAndDisconnect();
+        clock.set("2026-10-13T10:05:01Z");
+        depart();
+        when(channel.getMembers()).thenReturn(List.of());
+        verifyNoInteractions(recording);
+        var resume = mock(SessionResumeEvent.class);
+        when(resume.getJDA()).thenReturn(jda);
+        bot.onSessionResume(resume);
+        bot.onSessionResume(resume);
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(5, entry.getValue().minutes());
+    }
+
+    @Test void recreatedGatewayKeepsStartForAnOccupantStillInSameRoom() {
+        readyAndDisconnect();
+        clock.set("2026-10-13T10:05:01Z");
+        var recreated = mock(SessionRecreateEvent.class);
+        when(recreated.getJDA()).thenReturn(jda);
+        bot.onSessionRecreate(recreated);
+        verifyNoInteractions(recording);
+        clock.set("2026-10-13T10:10:00Z");
+        depart();
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(10, entry.getValue().minutes());
+    }
+
+    @Test void gatewayResumeDoesNotReconcileAnUnavailableGuildAsEmpty() {
+        readyAndDisconnect();
+        clock.set("2026-10-13T10:05:01Z");
+        when(jda.isUnavailable(Long.parseLong(GUILD))).thenReturn(true);
+        when(channel.getMembers()).thenReturn(List.of());
+        var resume = mock(SessionResumeEvent.class);
+        when(resume.getJDA()).thenReturn(jda);
+        bot.onSessionResume(resume);
+        verifyNoInteractions(recording);
+        when(jda.isUnavailable(Long.parseLong(GUILD))).thenReturn(false);
+        when(channel.getMembers()).thenReturn(List.of(member));
+        var available = mock(GuildAvailableEvent.class);
+        when(available.getGuild()).thenReturn(guild);
+        when(available.getJDA()).thenReturn(jda);
+        bot.onGuildAvailable(available);
+        clock.set("2026-10-13T10:10:00Z");
+        depart();
+        var entry = ArgumentCaptor.forClass(StudyEntry.class);
+        verify(recording).processDiscordAutomatic(entry.capture());
+        assertEquals(10, entry.getValue().minutes());
     }
 }

@@ -75,6 +75,14 @@ class DiscordSafetyTests {
         assertNull(DiscordMessages.card("⚠️ 저장하지 않았습니다."));
     }
 
+    @Test void automaticSaveCardShowsConnectionWarningAndKeepsLogButton() {
+        String warning = "⚠️ 봇 연결 장애로 마지막 정상 확인 시각까지만 기록을 종료했습니다. 이후 공부 시간은 확인 후 수동 등록해주세요.";
+        String text = "✅ member님의 공부 기록을 저장했습니다.\n\n🕒 2026-10-13 19:00 ~ 20:00 · 60분\n"
+                + "📝 공부 내용 : 모각코\n\n🔗 [Study Log 전체 기록 확인](<" + URL + ">)\n" + warning;
+        assertTrue(DiscordMessages.card(text).getDescription().contains(warning));
+        assertEquals(URL, DiscordMessages.buttons(text).getFirst().getButtons().getFirst().getUrl());
+    }
+
     @Test void drainIncludesQueuedTasksAndTheirAsynchronousDelivery() throws Exception {
         var tracker = new DiscordTasks();
         var queue = new ArrayList<Runnable>();

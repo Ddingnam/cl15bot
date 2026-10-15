@@ -69,6 +69,7 @@ final class DiscordMessages {
         blocks.add(lines[0].substring("✅".length()).strip());
         for (String line : lines) {
             if (line.startsWith("🕒 ")) blocks.add("**🕒 공부 시간**\n" + line.substring("🕒 ".length()));
+            else if (line.startsWith("⚠️")) blocks.add(line);
             else if (line.startsWith("📝 공부 내용 : ")) {
                 String subject = line.substring("📝 공부 내용 : ".length());
                 blocks.add("**📝 공부 내용**\n" + (subject.length() <= 1024 ? subject
